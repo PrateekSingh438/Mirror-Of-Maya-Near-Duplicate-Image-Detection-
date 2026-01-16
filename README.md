@@ -29,7 +29,9 @@ Traditional methods rely on cryptographic hashing (MD5/SHA) or perceptual hashin
 
 
 Source: https://medium.com/aimonks/clip-vs-dinov2-in-image-similarity-6fa5aa7ed8c6
-        https://medium.com/aimonks/image-similarity-with-dinov2-and-faiss-741744bc5804
+     
+ https://medium.com/aimonks/image-similarity-with-dinov2-and-faiss-741744bc5804
+        
 ## Methodology & Innovation
 
 ### 1. Asymmetric Search Engine
@@ -138,6 +140,7 @@ Evaluation performed on the Copydays dataset (Originals vs. Attacks).
 
 
 Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
 
