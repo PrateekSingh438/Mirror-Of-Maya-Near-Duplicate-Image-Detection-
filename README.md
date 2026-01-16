@@ -133,21 +133,8 @@ Evaluation performed on the Copydays dataset (Originals vs. Attacks).
 | JPEG 3          | 0.750                      | 0.110                          |
 
 
-## Project Structure
-
-mirror-of-maya/
-├── app.py              # Main Streamlit Dashboard (UI)
-├── engine.py           # Core Logic: DINOv2 Model, FAISS Indexing, Search
-├── data_loader.py      # Image Preprocessing & TTA Logic
-├── evaluate.py         # Metrics Calculation (Precision, Recall, F1)
-├── config.py           # Global Configuration (Model ID, Thresholds)
-├── benchmark.py        # Standalone Script for Copydays Evaluation
-├── requirements.txt    # Python Dependencies
-└── README.md           # Documentation
-
-
-
 Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
 
