@@ -1,33 +1,25 @@
-## Clone and Run the Repository
+## Mirror of Maya: Robust Near-Duplicate Image Detection
+Mirror of Maya is a production-grade Near-Duplicate Image Detection (NDID) pipeline designed to identify and cluster visually similar images, even under severe degradation such as heavy compression, blurring, and noise.
+Powered by Meta's DINOv2 (Self-Supervised Vision Transformer) and enhanced with a custom Test-Time Augmentation (TTA) engine, this system outperforms traditional hashing and CLIP-based methods, achieving an F1 score of 0.80+ on extreme test cases (JPEG Quality 3) where standard models fail.
 
-1) Clone the repository
-git clone https://github.com/PrateekSingh438/Mirror-Of-Maya-Near-Duplicate-Image-Detection.git
+## Key Features
+ AI-Powered Detection: Leverages DINOv2 embeddings to capture global object geometry rather than relying on brittle pixel-level details.
 
-2) Navigate into the project
-cd Mirror-Of-Maya-Near-Duplicate-Image-Detection
+ Robust TTA Engine: Implements Test-Time Augmentation (Gaussian Blur, Grayscale, Horizontal Flip) to "see through" artifacts and pixelation.
 
-3) Create a virtual environment
-python -m venv venv
+Galaxy Cluster Visualization: Interactive PCA-based projection to visualize the high-dimensional embedding space and identify duplicate clusters intuitively.
 
-4) Activate the virtual environment
+Asymmetric Search Strategy: Maintains a "Sharp" database index while querying with "Robust" embeddings. This maximizes recall for distorted queries without polluting the reference database.
 
-Windows:
-venv\Scripts\activate
+Action Queue: A streamlined cluster review system to efficiently clean datasets and reclaim storage space.
 
-Linux / macOS:
-source venv/bin/activate
+Automatic Benchmarking: Built-in evaluation tools to calculate Precision, Recall, and F1 scores against ground truth (Copydays dataset compatible).
 
-5) Install dependencies
-pip install -r requirements.txt
-
-6) Add your image dataset
-Place all images inside the "dataset" folder in the project root.
-
-7) Run the system
-streamlit run app.py
-
-The system will index images, detect near duplicates, and print matching image pairs.
-If ground truth is provided, evaluation metrics will also be shown.
-
+Feature,CLIP (OpenAI),DINOv2 (Meta),"The ""Mirror of Maya"" Advantage"
+Training Objective,Text-Image Alignment,Self-Supervised Learning (SSL),"DINOv2 learns object structure without text labels, making it superior for visual similarity."
+Texture Bias,High,Low (Shape-biased),Our implementation exploits DINOv2's shape bias to ignore JPEG artifacts.
+Local Features,Weak,Strong,Can match cropped or partially occluded images significantly better.
+Resolution,Fixed (224x224),Flexible (Patch-based),Handles varying aspect ratios naturally.
 
 inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
