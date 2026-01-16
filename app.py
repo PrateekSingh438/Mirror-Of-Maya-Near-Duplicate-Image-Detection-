@@ -8,7 +8,9 @@ import networkx as nx
 from engine import DuplicateDetector
 from evaluate import calculate_metrics
 import config
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 def get_dir_size(start_path='.'):
     total_size = 0
     for dirpath, dirnames, filenames in os.walk(start_path):
@@ -38,6 +40,7 @@ def auto_generate_ground_truth(folder_path):
     return gt_pairs
 
 def group_duplicates_into_clusters(duplicates_list):
+    if not duplicates_list: return []
     g = nx.Graph()
     for item in duplicates_list:
         g.add_edge(item['file1'], item['file2'])
@@ -89,7 +92,6 @@ with st.sidebar:
             st.success("Scan Complete!")
             st.rerun()
 
-
 st.title("Mirror of Maya")
 st.markdown("Intelligent Deduplication & Analytics Engine")
 
@@ -102,17 +104,32 @@ tab_analysis, tab_visual, tab_action, tab_query = st.tabs([
 
 with tab_analysis:
     if not st.session_state.duplicates:
-        st.info("Click Reload Database in the sidebar to start.")
+        st.info("Click Fresh Scan in the sidebar to start.")
     else:
         original_mb = get_dir_size(dataset_path)
-        wasted_size_mb = 0
         
+        wasted_size_mb = 0
         seen_files = set()
+        
         for dup in st.session_state.duplicates:
-            if dup['file2'] not in seen_files:
+            f1, f2 = dup['file1'], dup['file2']
+            
+            is_f1_orig = "original" in f1.lower()
+            is_f2_orig = "original" in f2.lower()
+            
+            target_file = None
+            
+            if is_f1_orig and not is_f2_orig:
+                target_file = f2
+            elif is_f2_orig and not is_f1_orig:
+                target_file = f1
+            else:
+                target_file = f2
+
+            if target_file and target_file not in seen_files:
                 try: 
-                    wasted_size_mb += os.path.getsize(dup['file2']) / (1024 * 1024)
-                    seen_files.add(dup['file2'])
+                    wasted_size_mb += os.path.getsize(target_file) / (1024 * 1024)
+                    seen_files.add(target_file)
                 except:
                     pass
         
@@ -124,13 +141,12 @@ with tab_analysis:
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Storage", f"{original_mb:.2f} MB")
-        col2.metric("Potential Savings", f"{wasted_size_mb:.2f} MB", delta=f"{pct_saved:.1f}%")
+        col2.metric("Potential Savings", f"{wasted_size_mb:.2f} MB", delta=f"{pct_saved:.1f}%") 
         col3.metric("Duplicate Pairs", len(st.session_state.duplicates))
         col4.metric("Model F1 Score", f"{f1:.4f}")
 
 with tab_visual:
     st.header("Image Embedding Clusters")
-    st.write("Visualizing the model embedding space.")
     
     if st.session_state.detector and st.session_state.detector.index.ntotal > 0:
         if st.button("Generate Galaxy Plot"):
@@ -156,7 +172,6 @@ with tab_visual:
 
 with tab_action:
     st.header("Review & Delete Clusters")
-    st.write("Similar images are grouped together.")
     
     if st.session_state.duplicates:
         clusters = group_duplicates_into_clusters(st.session_state.duplicates)
@@ -171,18 +186,15 @@ with tab_action:
         
         for i, cluster in enumerate(current_clusters):
             cluster.sort()
-            
             with st.container(border=True):
                 st.markdown(f"Group {start_idx + i + 1}")
                 cols = st.columns(min(len(cluster), 5))
-                
                 for idx, file_path in enumerate(cluster):
                     col_idx = idx % 5
                     with cols[col_idx]:
                         fname = os.path.basename(file_path)
                         st.image(file_path, use_container_width=True)
                         st.caption(fname)
-                        
                         is_selected = file_path in st.session_state.deletion_queue
                         if st.checkbox("Delete", value=is_selected, key=f"del_{start_idx+i}_{idx}"):
                             st.session_state.deletion_queue.add(file_path)
@@ -191,31 +203,24 @@ with tab_action:
 
         c1, c2, c3 = st.columns([1, 2, 1])
         if st.session_state.page > 0:
-            if c1.button("Previous"):
-                st.session_state.page -= 1
+            if c1.button("Previous"): st.session_state.page -= 1
         if end_idx < len(clusters):
-            if c3.button("Next"):
-                st.session_state.page += 1
+            if c3.button("Next"): st.session_state.page += 1
             
         st.divider()
-        
         pending_count = len(st.session_state.deletion_queue)
         if pending_count > 0:
             st.warning(f"{pending_count} files selected for deletion.")
             if st.button(f"EXECUTE DELETION ({pending_count} Files)"):
-                success_count = 0
                 for file_path in list(st.session_state.deletion_queue):
                     try:
                         if os.path.exists(file_path):
                             os.remove(file_path)
-                            success_count += 1
                             st.session_state.deletion_queue.discard(file_path)
-                    except Exception as e:
-                        st.error(f"Failed to delete {file_path}: {e}")
-                
-                st.success(f"Successfully deleted {success_count} files!")
+                    except Exception: pass
+                st.success("Deleted!")
                 st.session_state.duplicates = []
-                time.sleep(2)
+                time.sleep(1)
                 st.rerun()
     else:
         st.info("No duplicates found yet. Reload the database.")
