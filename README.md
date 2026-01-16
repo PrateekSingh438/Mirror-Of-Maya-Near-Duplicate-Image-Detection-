@@ -124,16 +124,31 @@ The dashboard will open in your browser at http://localhost:8501.
 ## Benchmark Results
 
 Evaluation performed on the Copydays dataset (Originals vs. Attacks).
+| Attack Category | DINOv2-Small (TTA) Recall | DINOv2-Base (Standard) Recall |
+|-----------------|----------------------------|--------------------------------|
+| JPEG 75         | 1.000                      | 1.000                          |
+| JPEG 20         | 0.985                      | 0.940                          |
+| JPEG 10         | 0.920                      | 0.760                          |
+| JPEG 5          | 0.840                      | 0.450                          |
+| JPEG 3          | 0.750                      | 0.110                          |
 
-Attack Category | DINOv2-Small (TTA) Recall | DINOv2-Base (Standard) Recall
-JPEG 75 | 1.000 | 1.000
-JPEG 20 | 0.985 | 0.940
-JPEG 10 | 0.920 | 0.760
-JPEG 5  | 0.840 | 0.450
-JPEG 3  | 0.750 | 0.110
+
+## Project Structure
+
+mirror-of-maya/
+├── app.py              # Main Streamlit Dashboard (UI)
+├── engine.py           # Core Logic: DINOv2 Model, FAISS Indexing, Search
+├── data_loader.py      # Image Preprocessing & TTA Logic
+├── evaluate.py         # Metrics Calculation (Precision, Recall, F1)
+├── config.py           # Global Configuration (Model ID, Thresholds)
+├── benchmark.py        # Standalone Script for Copydays Evaluation
+├── requirements.txt    # Python Dependencies
+└── README.md           # Documentation
 
 
-inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
+Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
 
