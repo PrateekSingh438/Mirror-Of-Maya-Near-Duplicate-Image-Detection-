@@ -25,6 +25,8 @@ Traditional methods rely on cryptographic hashing (MD5/SHA) or perceptual hashin
 | Local Features             | Weak                         | Strong                                 | Can match cropped or partially occluded images significantly better |
 | Resolution Handling        | Fixed (224x224)             | Flexible (Patch-based)                 | Handles varying aspect ratios naturally |
 
+![1_g-A0Dzq6IobadABlcHsoGQ](https://github.com/user-attachments/assets/f23bc769-e181-4e95-af4c-83bc8e948b97)
+
 
 ## Methodology & Innovation
 
@@ -134,6 +136,7 @@ Evaluation performed on the Copydays dataset (Originals vs. Attacks).
 
 
 Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
 
