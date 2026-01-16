@@ -74,8 +74,67 @@ During development we discovered a critical insight:
   - color distortions  
 - Better recall without lowering similarity threshold
 
+## Installation
+Prerequisites
+- Python 3.10+
+- CUDA-capable GPU (Recommended) or CPU (Supported via Quantization)
+
+## Setup
+
+### Clone the Repository
+git clone https://github.com/PrateekSingh438/Mirror-Of-Maya-Near-Duplicate-Image-Detection-
+cd Mirror-Of-Maya-Near-Duplicate-Image-Detection-
+
+### Create a Virtual Environment
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# Mac/Linux
+source venv/bin/activate
+
+### Install Dependencies
+pip install -r requirements.txt
+
+Note: Ensures torch, transformers, streamlit, and faiss-cpu are installed.
+
+---
+
+## Usage Guide
+
+### 1. Launch the Application
+streamlit run app.py
+
+The dashboard will open in your browser at http://localhost:8501.
+
+### 2. Configure & Scan
+- Select Model: Choose DINOv2 Small (Recommended for highest F1) or Base  
+- Set Path: Enter the path to your image dataset (e.g., ./dataset_copydays) in the config.py file 
+- Threshold: Adjust the similarity slider (Recommended: 82% for noisy datasets)  
+- Scan: Click Fresh Scan to build the index  
+
+### 3. Review & Clean
+- Metrics Tab: View storage savings and F1 scores  
+- Galaxy View: Explore the visual clusters in 2D space  
+- Action Queue: Select duplicate groups to delete and execute the cleanup  
+
+---
+
+## Benchmark Results
+
+Evaluation performed on the Copydays dataset (Originals vs. Attacks).
+
+Attack Category | DINOv2-Small (TTA) Recall | DINOv2-Base (Standard) Recall
+JPEG 75 | 1.000 | 1.000
+JPEG 20 | 0.985 | 0.940
+JPEG 10 | 0.920 | 0.760
+JPEG 5  | 0.840 | 0.450
+JPEG 3  | 0.750 | 0.110
+
 
 inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
 
