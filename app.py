@@ -8,7 +8,7 @@ import networkx as nx
 from engine import DuplicateDetector
 from evaluate import calculate_metrics
 import config
-
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 def get_dir_size(start_path='.'):
     total_size = 0
     for dirpath, dirnames, filenames in os.walk(start_path):

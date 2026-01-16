@@ -1,105 +1,89 @@
 import os
 import time
+import numpy as np
 from engine import DuplicateDetector
-from evaluate import calculate_metrics
 
-def find_optimal_threshold(detector, ground_truth_pairs):
-    import numpy as np
-
-    print("\nOPTIMIZING THRESHOLD...")
-    print(f"{'THRESHOLD':<10} | {'F1 SCORE':<10} | {'RECALL':<10} | {'PRECISION':<10}")
-    print("-" * 50)
-
-    best_f1 = 0
-    best_thresh = 0
-
-    for t in np.arange(0.80, 0.97, 0.02):
-        preds = detector.find_duplicates(threshold=t)
-        pred_pairs = [(p['file1'], p['file2']) for p in preds]
-
-        tp = 0
-        gt_set = set(ground_truth_pairs)
-        for p in pred_pairs:
-            if tuple(sorted(p)) in gt_set:
-                tp += 1
-
-        precision = tp / len(pred_pairs) if pred_pairs else 0
-        recall = tp / len(ground_truth_pairs) if ground_truth_pairs else 0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-        print(f"{t:.2f}       | {f1:.4f}     | {recall:.4f}     | {precision:.4f}")
-
-        if f1 > best_f1:
-            best_f1 = f1
-            best_thresh = t
-
-    print("-" * 50)
-    print(f"BEST THRESHOLD: {best_thresh:.2f} (F1: {best_f1:.4f})")
-    return best_thresh
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 DATASET_ROOT = "./dataset_copydays"
 ORIGINAL_DIR = os.path.join(DATASET_ROOT, "original")
-ATTACK_DIRS = {
-    "Strong Attack": os.path.join(DATASET_ROOT, "strong"),
-    "JPEG (Quality 3)": os.path.join(DATASET_ROOT, "jpeg", "3"),
-    "JPEG (Quality 10)": os.path.join(DATASET_ROOT, "jpeg", "10"),
+
+ATTACK_CATEGORIES = {
+    "JPEG 3": os.path.join(DATASET_ROOT, "jpeg", "3"),
+    "JPEG 5": os.path.join(DATASET_ROOT, "jpeg", "5"),
+    "JPEG 8": os.path.join(DATASET_ROOT, "jpeg", "8"),
+    "JPEG 10": os.path.join(DATASET_ROOT, "jpeg", "10"),
+    "JPEG 15": os.path.join(DATASET_ROOT, "jpeg", "15"),
+    "JPEG 20": os.path.join(DATASET_ROOT, "jpeg", "20"),
+    "JPEG 30": os.path.join(DATASET_ROOT, "jpeg", "30"),
+    "JPEG 50": os.path.join(DATASET_ROOT, "jpeg", "50"),
+    "JPEG 75": os.path.join(DATASET_ROOT, "jpeg", "75"),
+    "Strong": os.path.join(DATASET_ROOT, "strong"),
 }
 
-def get_files_in_dir(directory):
-    files = []
+TEST_THRESHOLD = 0.80 
+
+def get_image_files(directory):
     if not os.path.exists(directory):
         return []
-    for f in os.listdir(directory):
-        if f.lower().endswith(('.jpg', '.jpeg', '.png')):
-            files.append(os.path.join(directory, f))
-    return files
+    return [os.path.join(directory, f) for f in os.listdir(directory) 
+            if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
-def run_benchmark():
-    print("Starting Copydays Benchmark...")
-
+def run_comprehensive_benchmark():
+    print("Initializing Robust Benchmark...")
     detector = DuplicateDetector()
-    detector.bulk_index(DATASET_ROOT)
+    
+    print(f"Indexing Originals from {ORIGINAL_DIR}...")
+    detector.bulk_index(ORIGINAL_DIR)
+    
+    print("\n" + "="*65)
+    print(f"{'ATTACK CATEGORY':<20} | {'RECALL':<10} | {'AVG SCORE':<10} | {'STATUS'}")
+    print("="*65)
 
-    print("\n" + "="*50)
-    print(f"{'CATEGORY':<25} | {'PRECISION':<10} | {'RECALL':<10} | {'F1 SCORE':<10}")
-    print("="*50)
+    total_tp = 0
+    total_queries = 0
 
-    for category_name, attack_dir in ATTACK_DIRS.items():
-        if not os.path.exists(attack_dir):
-            print(f"{category_name:<25} | {'SKIPPED (Not Found)':<30}")
+    for name, folder in ATTACK_CATEGORIES.items():
+        if not os.path.exists(folder):
+            print(f"{name:<20} | {'SKIPPED':<10} | {'N/A':<10} | Folder not found")
             continue
 
-        gt_pairs = []
-        attack_files = get_files_in_dir(attack_dir)
-        original_files = get_files_in_dir(ORIGINAL_DIR)
-
-        orig_map = {os.path.splitext(os.path.basename(f))[0]: f for f in original_files}
-
-        for af in attack_files:
-            af_id = os.path.splitext(os.path.basename(af))[0]
-            if af_id in orig_map:
-                gt_pairs.append(tuple(sorted((orig_map[af_id], af))))
-
-        all_preds = detector.find_duplicates(threshold=0.88)
-
-        category_preds = []
-        for p in all_preds:
-            if attack_dir in os.path.dirname(p['file1']) or attack_dir in os.path.dirname(p['file2']):
-                category_preds.append((p['file1'], p['file2']))
+        query_files = get_image_files(folder)
+        if not query_files:
+            continue
 
         tp = 0
-        gt_set = set(gt_pairs)
-        for p in category_preds:
-            if tuple(sorted(p)) in gt_set:
+        scores = []
+
+        for q_path in query_files:
+            q_id = os.path.splitext(os.path.basename(q_path))[0]
+            
+            results = detector.find_matches_for_file(q_path, threshold=TEST_THRESHOLD)
+            
+            found = False
+            for res in results:
+                res_id = os.path.splitext(os.path.basename(res['path']))[0]
+                scores.append(res['score'])
+                if res_id == q_id:
+                    found = True
+                    break
+            
+            if found:
                 tp += 1
+        
+        recall = tp / len(query_files) if query_files else 0
+        avg_s = np.mean(scores) if scores else 0
+        
+        status = "EXCELLENT" if recall > 0.9 else "WEAK" if recall < 0.5 else "GOOD"
+        print(f"{name:<20} | {recall:.4f}    | {avg_s:.4f}    | {status}")
+        
+        total_tp += tp
+        total_queries += len(query_files)
 
-        precision = tp / len(category_preds) if category_preds else 0
-        recall = tp / len(gt_pairs) if gt_pairs else 0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-        print(f"{category_name:<25} | {precision:.4f}     | {recall:.4f}     | {f1:.4f}")
-
-    print("="*50)
+    final_recall = total_tp / total_queries if total_queries > 0 else 0
+    print("="*65)
+    print(f"FINAL SYSTEM RECALL: {final_recall:.4f}")
+    print("="*65)
 
 if __name__ == "__main__":
-    run_benchmark()
+    run_comprehensive_benchmark()

@@ -1,21 +1,24 @@
-import torch
+import cv2
+import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset
 
-class ImageDataset(Dataset):
-    def __init__(self, image_paths, processor):
-        self.image_paths = image_paths
-        self.processor = processor
-    
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        try:
-            image = Image.open(img_path).convert("RGB")
-            inputs = self.processor(images=image, return_tensors="pt")
-            return inputs["pixel_values"].squeeze(0), img_path
-        except Exception as e:
-            print(f"Error loading {img_path}: {e}")
-            return torch.zeros((3, 224, 224)), "ERROR"
+def get_tta_views(image_path):
+    try:
+        pil_img = Image.open(image_path).convert("RGB")
+        cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        
+        views = []
+        
+        views.append(pil_img)
+        
+        blur_img = cv2.GaussianBlur(cv_img, (5, 5), 0)
+        views.append(Image.fromarray(cv2.cvtColor(blur_img, cv2.COLOR_BGR2RGB)))
+        
+        gray_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        gray_rgb = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
+        views.append(Image.fromarray(gray_rgb))
+        
+        return views
+        
+    except Exception:
+        return None
