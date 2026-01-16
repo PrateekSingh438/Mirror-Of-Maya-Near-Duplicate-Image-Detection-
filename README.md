@@ -28,3 +28,6 @@ streamlit run app.py
 
 The system will index images, detect near duplicates, and print matching image pairs.
 If ground truth is provided, evaluation metrics will also be shown.
+
+
+inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
