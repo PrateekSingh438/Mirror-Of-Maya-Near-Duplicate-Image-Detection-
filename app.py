@@ -58,18 +58,37 @@ if 'deletion_queue' not in st.session_state:
     st.session_state.deletion_queue = set()
 
 with st.sidebar:
-    st.header("System Settings")
+    st.header("Settings")
+    
+    model_options = {
+        "Small (Fast)": "facebook/dinov2-small",
+        "Base (Standard)": "facebook/dinov2-base",
+        "Large (Accurate)": "facebook/dinov2-large"
+    }
+    
+    selected_label = st.selectbox("Select Model", list(model_options.keys()))
+    new_model_id = model_options[selected_label]
+    
+    if config.MODEL_ID != new_model_id:
+        config.MODEL_ID = new_model_id
+        st.session_state.detector = DuplicateDetector()
+        st.session_state.duplicates = []
+        st.sidebar.info(f"Switched to {selected_label}. Please Scan.")
+
     dataset_path = st.text_input("Dataset Path", value="./dataset_copydays")
-    threshold_pct = st.slider("Similarity Threshold (%)", 50, 100, 85)
+    threshold_pct = st.slider("Similarity Threshold (%)", 50, 100, 82)
     threshold_val = threshold_pct / 100.0
     
     st.divider()
-    if st.button("Reload / Rescan Database", type="primary"):
-        st.session_state.detector = DuplicateDetector()
-        st.session_state.detector.bulk_index(dataset_path)
-        st.session_state.duplicates = st.session_state.detector.find_duplicates(threshold=threshold_val)
-        st.success(f"Index Updated! Found {len(st.session_state.duplicates)} pairs.")
-        st.rerun()
+    
+    if st.button("Fresh Scan", type="primary"):
+        with st.spinner("Processing images..."):
+            st.session_state.detector = DuplicateDetector()
+            st.session_state.detector.bulk_index(dataset_path)
+            st.session_state.duplicates = st.session_state.detector.find_duplicates(threshold=threshold_val)
+            st.success("Scan Complete!")
+            st.rerun()
+
 
 st.title("Mirror of Maya")
 st.markdown("Intelligent Deduplication & Analytics Engine")
