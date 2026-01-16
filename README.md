@@ -15,11 +15,17 @@ Action Queue: A streamlined cluster review system to efficiently clean datasets 
 
 Automatic Benchmarking: Built-in evaluation tools to calculate Precision, Recall, and F1 scores against ground truth (Copydays dataset compatible).
 
-Feature,CLIP (OpenAI),DINOv2 (Meta),"The ""Mirror of Maya"" Advantage"
-Training Objective,Text-Image Alignment,Self-Supervised Learning (SSL),"DINOv2 learns object structure without text labels, making it superior for visual similarity."
-Texture Bias,High,Low (Shape-biased),Our implementation exploits DINOv2's shape bias to ignore JPEG artifacts.
-Local Features,Weak,Strong,Can match cropped or partially occluded images significantly better.
-Resolution,Fixed (224x224),Flexible (Patch-based),Handles varying aspect ratios naturally.
+## Technical Architecture: Why DINOv2?
+Traditional methods rely on cryptographic hashing (MD5/SHA) or perceptual hashing (pHash), which fail immediately upon rotation or compression. While CLIP (OpenAI) is the standard for image retrieval, our benchmarking revealed critical limitations for duplicate detection.
+
+| Feature                     | CLIP (OpenAI)                | DINOv2 (Meta)                          | The "Mirror of Maya" Advantage |
+|----------------------------|------------------------------|----------------------------------------|--------------------------------|
+| Training Objective         | Text-Image Alignment         | Self-Supervised Learning (SSL)         | DINOv2 learns object structure without text labels, making it superior for visual similarity |
+| Texture Bias               | High                         | Low (Shape-biased)                     | Our implementation exploits DINOv2's shape bias to ignore JPEG artifacts |
+| Local Features             | Weak                         | Strong                                 | Can match cropped or partially occluded images significantly better |
+| Resolution Handling        | Fixed (224x224)             | Flexible (Patch-based)                 | Handles varying aspect ratios naturally |
+
 
 inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
