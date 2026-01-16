@@ -26,6 +26,56 @@ Traditional methods rely on cryptographic hashing (MD5/SHA) or perceptual hashin
 | Resolution Handling        | Fixed (224x224)             | Flexible (Patch-based)                 | Handles varying aspect ratios naturally |
 
 
+## Methodology & Innovation
+
+### 1. Asymmetric Search Engine
+
+Unlike standard pipelines that use the same embedding logic for both indexing and querying, we developed an **Asymmetric approach** to handle noise:
+
+**Indexing (The "Gallery")**
+- Images are processed using the **Standard DINOv2 pipeline**
+- We preserve high-frequency details to maintain a **Perfect Reference**
+
+**Querying (The "Probe")**
+Queries undergo **Test-Time Augmentation (TTA):**
+
+- **View 1:** Original Image  
+- **View 2:** Gaussian Blur (kernel 5x5) → Removes 8x8 JPEG grid blocks  
+- **View 3:** Grayscale → Removes chroma noise  
+
+**Fusion Strategy**
+- The three embeddings are averaged to create a **Robust Vector**  
+- This vector matches reliably against the clean gallery image
+
+---
+
+### 2. The "Small Model" Advantage (Shape vs. Texture)
+
+During development we discovered a critical insight:
+
+> **DINOv2-Small (21M params) outperformed DINOv2-Base (86M params) for near-duplicate detection**
+
+#### Why this happens
+
+- The **Base model has higher Texture Bias**  
+  - It interprets JPEG artifacts as new textures  
+  - This reduces similarity scores for heavily compressed images  
+
+- The **Small model exhibits stronger Shape Bias**  
+  - Limited capacity forces it to focus on global structure  
+  - It effectively ignores pixel-level noise  
+  - Matches based on object silhouette rather than compression artifacts  
+
+#### Practical Outcome
+
+- More stable matching under:
+  - JPEG quality 3–10  
+  - strong compression  
+  - color distortions  
+- Better recall without lowering similarity threshold
+
+
 inria working dataset link http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
 
 
