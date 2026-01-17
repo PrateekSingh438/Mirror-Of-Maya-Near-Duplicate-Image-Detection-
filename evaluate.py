@@ -1,8 +1,8 @@
 from sklearn.metrics import f1_score, precision_score, recall_score
+import os
 
 def calculate_metrics(detected_pairs, ground_truth_pairs):
     def normalize_pair(p):
-        import os
         return tuple(sorted((os.path.basename(p[0]), os.path.basename(p[1]))))
 
     detected_set = set(normalize_pair(p) for p in detected_pairs)
@@ -16,11 +16,37 @@ def calculate_metrics(detected_pairs, ground_truth_pairs):
     recall = true_positives / (true_positives + false_negatives + 1e-9)
     f1 = 2 * (precision * recall) / (precision + recall + 1e-9)
 
-    print("\n--- FINAL EVALUATION REPORT ---")
-    print(f"True Positives:  {true_positives}")
-    print(f"False Positives: {false_positives}")
-    print(f"Missed (FN):     {false_negatives}")
-    print(f"F1 Score:        {f1:.4f}")
-    print("-----------------------------------")
-
     return f1
+
+def analyze_match_types(detected_pairs):
+    orig_recovered = 0
+    junk_to_junk = 0
+    total = len(detected_pairs)
+    
+    if total == 0:
+        return {
+            "recovery": 0, 
+            "cross": 0, 
+            "total": 0,
+            "recovery_pct": 0,
+            "cross_pct": 0
+        }
+
+    for pair in detected_pairs:
+        f1, f2 = pair['file1'].lower(), pair['file2'].lower()
+        
+        f1_is_orig = "original" in f1
+        f2_is_orig = "original" in f2
+        
+        if f1_is_orig != f2_is_orig: 
+            orig_recovered += 1
+        elif not f1_is_orig and not f2_is_orig:
+            junk_to_junk += 1
+
+    return {
+        "recovery": orig_recovered,
+        "cross": junk_to_junk,
+        "total": total,
+        "recovery_pct": (orig_recovered / total) * 100,
+        "cross_pct": (junk_to_junk / total) * 100
+    }

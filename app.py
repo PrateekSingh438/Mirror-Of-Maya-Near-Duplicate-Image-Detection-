@@ -6,7 +6,7 @@ import plotly.express as px
 from sklearn.decomposition import PCA
 import networkx as nx
 from engine import DuplicateDetector
-from evaluate import calculate_metrics
+from evaluate import calculate_metrics, analyze_match_types
 import config
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -107,18 +107,15 @@ with tab_analysis:
         st.info("Click Fresh Scan in the sidebar to start.")
     else:
         original_mb = get_dir_size(dataset_path)
-        
         wasted_size_mb = 0
         seen_files = set()
         
         for dup in st.session_state.duplicates:
             f1, f2 = dup['file1'], dup['file2']
-            
             is_f1_orig = "original" in f1.lower()
             is_f2_orig = "original" in f2.lower()
             
             target_file = None
-            
             if is_f1_orig and not is_f2_orig:
                 target_file = f2
             elif is_f2_orig and not is_f1_orig:
@@ -130,8 +127,7 @@ with tab_analysis:
                 try: 
                     wasted_size_mb += os.path.getsize(target_file) / (1024 * 1024)
                     seen_files.add(target_file)
-                except:
-                    pass
+                except: pass
         
         optimized_mb = original_mb - wasted_size_mb
         pct_saved = (wasted_size_mb / original_mb * 100) if original_mb > 0 else 0
@@ -144,6 +140,29 @@ with tab_analysis:
         col2.metric("Potential Savings", f"{wasted_size_mb:.2f} MB", delta=f"{pct_saved:.1f}%") 
         col3.metric("Duplicate Pairs", len(st.session_state.duplicates))
         col4.metric("Model F1 Score", f"{f1:.4f}")
+
+        st.divider()
+        st.subheader("Quality Check")
+        
+        analysis = analyze_match_types(st.session_state.duplicates)
+        
+        if analysis['total'] > 0:
+            c_a, c_b = st.columns(2)
+            c_a.metric(
+                label="Originals Recovered", 
+                value=f"{analysis['recovery']} pairs",
+                delta=f"{analysis['recovery_pct']:.1f}% of total"
+            )
+            c_b.metric(
+                label="Cross-Matches", 
+                value=f"{analysis['cross']} pairs", 
+                delta=f"{analysis['cross_pct']:.1f}% of total",
+                delta_color="inverse"
+            )
+            if analysis['cross_pct'] > 50:
+                st.warning("Warning: High cross-match rate.")
+            else:
+                st.success("System is anchoring to originals correctly.")
 
 with tab_visual:
     st.header("Image Embedding Clusters")
@@ -195,6 +214,13 @@ with tab_action:
                         fname = os.path.basename(file_path)
                         st.image(file_path, use_container_width=True)
                         st.caption(fname)
+                        
+                        for d in st.session_state.duplicates:
+                            if d['file1'] == file_path or d['file2'] == file_path:
+                                if d.get('method') == "pHash":
+                                    st.markdown("**pHash Match**")
+                                    break
+                                    
                         is_selected = file_path in st.session_state.deletion_queue
                         if st.checkbox("Delete", value=is_selected, key=f"del_{start_idx+i}_{idx}"):
                             st.session_state.deletion_queue.add(file_path)

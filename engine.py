@@ -14,7 +14,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 class DuplicateDetector:
     def __init__(self):
-        print(f" Initializing Detector on {config.DEVICE}...")
+        print(f"Initializing Hybrid Detector on {config.DEVICE}")
         self.device = config.DEVICE
         self.processor = AutoImageProcessor.from_pretrained(config.MODEL_ID)
         self.model = AutoModel.from_pretrained(config.MODEL_ID)
@@ -29,7 +29,9 @@ class DuplicateDetector:
         self.model.eval()
         self.dimension = self.model.config.hidden_size
         self.index = faiss.IndexFlatIP(self.dimension)
-        self.hash_map = {}
+        
+        self.phash_map = {} 
+        self.fast_duplicates = []
         self.stored_files = []
 
     def _generate_standard_embedding(self, image_path):
@@ -85,13 +87,38 @@ class DuplicateDetector:
 
         self.index = faiss.IndexFlatIP(self.dimension)
         self.stored_files = []
-        self.hash_map = {}
+        self.phash_map = {}
+        self.fast_duplicates = []
 
-        print(f"Processing {len(image_files)} images...")
+        print(f"Processing {len(image_files)} images")
         batch_embeddings = []
         batch_files = []
+        files_to_embed = []
         
+        print("Phase 1: pHash Fast-Pass")
         for f in tqdm(image_files):
+            try:
+                img = Image.open(f)
+                h = str(imagehash.phash(img, hash_size=16))
+                
+                if h in self.phash_map:
+                    original_file = self.phash_map[h]
+                    print(f"pHash Hit: {os.path.basename(f)}")
+                    self.fast_duplicates.append({
+                        "file1": original_file,
+                        "file2": f,
+                        "score": 1.0,
+                        "method": "pHash"
+                    })
+                else:
+                    self.phash_map[h] = f
+                    files_to_embed.append(f)
+            except:
+                continue
+
+        print(f"Phase 2: Embedding {len(files_to_embed)} unique images")
+        
+        for f in tqdm(files_to_embed):
             emb = self._generate_standard_embedding(f)
             if emb is not None:
                 batch_embeddings.append(emb)
@@ -109,38 +136,48 @@ class DuplicateDetector:
 
     def find_duplicates(self, threshold=None):
         threshold = threshold or config.SIMILARITY_THRESHOLD
-        if self.index.ntotal < 2: return []
-
-        D, I = self.index.search(self.index.reconstruct_n(0, self.index.ntotal), 10)
-        duplicates = []
+        
+        all_duplicates = self.fast_duplicates.copy()
         visited = set()
+        
+        for d in all_duplicates:
+            pair = tuple(sorted((d['file1'], d['file2'])))
+            visited.add(pair)
+
+        if self.index.ntotal < 2: return all_duplicates
+
+        k = min(50, self.index.ntotal)
+        D, I = self.index.search(self.index.reconstruct_n(0, self.index.ntotal), k)
 
         for i in range(len(I)):
             for j in range(1, len(I[i])):
                 score = D[i][j]
                 idx = I[i][j]
                 
-                if idx != -1 and score > threshold:
+                if score < threshold: break 
+                
+                if idx != -1:
                     idx1, idx2 = i, idx
                     if idx1 < len(self.stored_files) and idx2 < len(self.stored_files):
                         pair = tuple(sorted((self.stored_files[idx1], self.stored_files[idx2])))
                         if pair not in visited:
-                            duplicates.append({
+                            all_duplicates.append({
                                 "file1": pair[0],
                                 "file2": pair[1],
-                                "score": float(score)
+                                "score": float(score),
+                                "method": "DINOv2"
                             })
                             visited.add(pair)
-        return duplicates
+        return all_duplicates
 
     def find_matches_for_file(self, query_image_path, threshold=None):
         threshold = threshold or config.SIMILARITY_THRESHOLD
-        
         query_emb = self._generate_robust_embedding(query_image_path)
         if query_emb is None: return []
         
         query_emb = query_emb.reshape(1, -1)
-        D, I = self.index.search(query_emb, 10)
+        k = min(50, self.index.ntotal)
+        D, I = self.index.search(query_emb, k)
         
         matches = []
         for score, idx in zip(D[0], I[0]):
@@ -148,6 +185,7 @@ class DuplicateDetector:
                 matches.append({
                     "path": self.stored_files[idx],
                     "score": float(score),
-                    "method": "DINOv2 (Robust)"
+                    "method": "DINOv2"
                 })
+            else: break
         return matches
