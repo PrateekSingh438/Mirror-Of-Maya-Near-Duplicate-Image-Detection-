@@ -1,10 +1,8 @@
-from sklearn.metrics import f1_score, precision_score, recall_score
-import os
+import config
+from utils import normalize_pair, is_original_file
 
 def calculate_metrics(detected_pairs, ground_truth_pairs):
-    def normalize_pair(p):
-        return tuple(sorted((os.path.basename(p[0]), os.path.basename(p[1]))))
-
+    
     detected_set = set(normalize_pair(p) for p in detected_pairs)
     truth_set = set(normalize_pair(p) for p in ground_truth_pairs)
 
@@ -12,13 +10,14 @@ def calculate_metrics(detected_pairs, ground_truth_pairs):
     false_positives = len(detected_set - truth_set)
     false_negatives = len(truth_set - detected_set)
 
-    precision = true_positives / (true_positives + false_positives + 1e-9)
-    recall = true_positives / (true_positives + false_negatives + 1e-9)
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-9)
+    precision = true_positives / (true_positives + false_positives + config.EPSILON)
+    recall = true_positives / (true_positives + false_negatives + config.EPSILON)
+    f1 = 2 * (precision * recall) / (precision + recall + config.EPSILON)
 
     return f1
 
 def analyze_match_types(detected_pairs):
+    
     orig_recovered = 0
     junk_to_junk = 0
     total = len(detected_pairs)
@@ -33,10 +32,10 @@ def analyze_match_types(detected_pairs):
         }
 
     for pair in detected_pairs:
-        f1, f2 = pair['file1'].lower(), pair['file2'].lower()
+        f1, f2 = pair['file1'], pair['file2']
         
-        f1_is_orig = "original" in f1
-        f2_is_orig = "original" in f2
+        f1_is_orig = is_original_file(f1)
+        f2_is_orig = is_original_file(f2)
         
         if f1_is_orig != f2_is_orig: 
             orig_recovered += 1
