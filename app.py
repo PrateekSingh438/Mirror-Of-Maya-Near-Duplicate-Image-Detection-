@@ -163,7 +163,7 @@ with tab_visual:
                     title=f"Galaxy View of {limit} Images",
                     color_discrete_sequence=[config.GALAXY_COLOR]
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
     else:
         st.warning("Please scan the database first.")
 
@@ -192,7 +192,7 @@ with tab_action:
                     col_idx = idx % config.MAX_IMAGES_PER_ROW
                     with cols[col_idx]:
                         fname = os.path.basename(file_path)
-                        st.image(file_path, use_container_width=True)
+                        st.image(file_path, width='stretch')
                         st.caption(fname)
                         
                         for d in st.session_state.duplicates:
