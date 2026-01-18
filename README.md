@@ -299,10 +299,7 @@ DEFAULT_THRESHOLD_PERCENT = 82
 BATCH_SIZE = 32  # Increase to 64 if GPU has sufficient memory
 MAX_NEIGHBORS_FOR_SEARCH = 50  # Reduce for faster search
 
-# UI settings
-CLUSTERS_PER_PAGE = 5
-MAX_IMAGES_PER_ROW = 5
-```
+crop dataset: https://drive.google.com/drive/folders/1DV-GJaaJw1XFsNEaQb2V2Ccw7ZUth1_g?usp=drive_link
 
 ## Dataset
 
