@@ -6,7 +6,6 @@ import ClustersView from './components/ClustersView.jsx';
 import QueryTool from './components/QueryTool.jsx';
 import MetricsView from './components/MetricsView.jsx';
 import { apiService } from './services/api.js';
-import './App.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -62,31 +61,39 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className="min-h-screen bg-maya-dark">
       <Header />
-      <div className="app-container">
-        <Sidebar
-          datasetPath={datasetPath}
-          setDatasetPath={setDatasetPath}
-          threshold={threshold}
-          setThreshold={setThreshold}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          availableModels={availableModels}
-          onScan={handleScan}
-          isScanning={isScanning}
-          scanStatus={scanStatus}
-        />
-        <main className="main-content">
-          <div className="tab-container">
+      <Sidebar
+        datasetPath={datasetPath}
+        setDatasetPath={setDatasetPath}
+        threshold={threshold}
+        setThreshold={setThreshold}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        availableModels={availableModels}
+        onScan={handleScan}
+        isScanning={isScanning}
+        scanStatus={scanStatus}
+      />
+      <main className="ml-72 mt-20 min-h-screen">
+        <div className="sticky top-20 z-40 bg-maya-dark/95 backdrop-blur-lg border-b border-saffron-400/20 px-6 py-4">
+          <div className="flex gap-2 flex-wrap">
             <button
-              className={`tab-button ${activeTab === 'dashboard' ? 'active' : ''}`}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                activeTab === 'dashboard'
+                  ? 'bg-saffron-400 text-maya-darker shadow-lg shadow-saffron-400/30'
+                  : 'bg-indigo-900/50 text-parchment-300 hover:bg-indigo-800/70 border border-indigo-400/30'
+              }`}
               onClick={() => setActiveTab('dashboard')}
             >
               Dashboard
             </button>
             <button
-              className={`tab-button ${activeTab === 'metrics' ? 'active' : ''}`}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                activeTab === 'metrics'
+                  ? 'bg-saffron-400 text-maya-darker shadow-lg shadow-saffron-400/30'
+                  : 'bg-indigo-900/50 text-parchment-300 hover:bg-indigo-800/70 border border-indigo-400/30'
+              }`}
               onClick={() => {
                 setActiveTab('metrics');
                 loadMetrics();
@@ -95,27 +102,35 @@ function App() {
               Metrics & Report
             </button>
             <button
-              className={`tab-button ${activeTab === 'clusters' ? 'active' : ''}`}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                activeTab === 'clusters'
+                  ? 'bg-saffron-400 text-maya-darker shadow-lg shadow-saffron-400/30'
+                  : 'bg-indigo-900/50 text-parchment-300 hover:bg-indigo-800/70 border border-indigo-400/30'
+              }`}
               onClick={() => setActiveTab('clusters')}
             >
               Galaxy Clusters
             </button>
             <button
-              className={`tab-button ${activeTab === 'query' ? 'active' : ''}`}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                activeTab === 'query'
+                  ? 'bg-saffron-400 text-maya-darker shadow-lg shadow-saffron-400/30'
+                  : 'bg-indigo-900/50 text-parchment-300 hover:bg-indigo-800/70 border border-indigo-400/30'
+              }`}
               onClick={() => setActiveTab('query')}
             >
               Query Tool
             </button>
           </div>
+        </div>
 
-          <div className="content-area">
-            {activeTab === 'dashboard' && <Dashboard metrics={metrics} />}
-            {activeTab === 'metrics' && <MetricsView metrics={metrics} />}
-            {activeTab === 'clusters' && <ClustersView />}
-            {activeTab === 'query' && <QueryTool threshold={threshold} />}
-          </div>
-        </main>
-      </div>
+        <div>
+          {activeTab === 'dashboard' && <Dashboard metrics={metrics} />}
+          {activeTab === 'metrics' && <MetricsView metrics={metrics} />}
+          {activeTab === 'clusters' && <ClustersView />}
+          {activeTab === 'query' && <QueryTool threshold={threshold} />}
+        </div>
+      </main>
     </div>
   );
 }

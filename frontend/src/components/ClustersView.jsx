@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Trash2, Image as ImageIcon } from 'lucide-react';
 import { apiService } from '../services/api.js';
-import './ClustersView.css';
 
 const ClustersPerPage = 5;
 
@@ -60,80 +59,93 @@ const ClustersView = () => {
   const totalPages = Math.ceil(totalClusters / ClustersPerPage);
 
   return (
-    <div className="clusters-view">
-      <div className="clusters-header">
-        <h2>Galaxy Clusters</h2>
-        <p className="clusters-subtitle">Visualize and manage duplicate image clusters</p>
+    <div className="p-6">
+      <div className="mb-8">
+        <h2 className="text-4xl font-bold text-gradient-saffron mb-3">Cosmic Clusters</h2>
+        <p className="text-parchment-300">Organize and purify the illusions - manage duplicate form collections</p>
       </div>
 
       {selectedFiles.size > 0 && (
-        <div className="delete-banner">
-          <span>{selectedFiles.size} files selected for deletion</span>
-          <button onClick={handleDelete} className="delete-button">
+        <div className="mb-6 p-4 bg-red-600/20 border border-red-400 rounded-lg flex items-center justify-between animate-pulse">
+          <span className="text-red-300">
+            {selectedFiles.size} illusory form{selectedFiles.size !== 1 ? 's' : ''} marked for dissolution
+          </span>
+          <button
+            onClick={handleDelete}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all duration-300 transform hover:scale-105"
+          >
             <Trash2 size={16} />
-            Execute Deletion
+            Purify Collection
           </button>
         </div>
       )}
 
       {isLoading ? (
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading clusters...</p>
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-saffron-400 border-t-gold mb-4"></div>
+          <p className="text-parchment-300 text-lg">Loading clusters...</p>
         </div>
       ) : clusters.length === 0 ? (
-        <div className="empty-state">
-          <ImageIcon size={64} className="empty-icon" />
-          <p>No clusters found. Please scan a dataset first.</p>
+        <div className="flex flex-col items-center justify-center py-20">
+          <ImageIcon size={64} className="text-indigo-400 mb-4 animate-float" />
+          <p className="text-parchment-300 text-lg">No clusters found. Begin discernment with the Chakra first.</p>
         </div>
       ) : (
         <>
-          <div className="clusters-grid">
+          <div className="space-y-6">
             {clusters.map((cluster) => (
-              <div key={cluster.id} className="cluster-card">
-                <div className="cluster-header">
-                  <h3>Cluster {cluster.id}</h3>
-                  <span className="cluster-count">{cluster.count} images</span>
+              <div key={cluster.id} className="card">
+                <div className="flex items-center justify-between mb-4 pb-4 border-b border-saffron-400/20">
+                  <h3 className="text-xl font-bold text-saffron-400">Source Soul {cluster.id}</h3>
+                  <span className="px-3 py-1 bg-indigo-900/50 border border-indigo-400 rounded-full text-indigo-300 text-sm font-semibold">
+                    {cluster.count} manifestations
+                  </span>
                 </div>
-                <div className="cluster-images">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {cluster.files.map((filePath, idx) => {
                     const fileName = filePath.split(/[/\\]/).pop() || filePath;
                     const isSelected = selectedFiles.has(filePath);
-                    const imageUrl = filePath.startsWith('http') 
-                      ? filePath 
+                    const imageUrl = filePath.startsWith('http')
+                      ? filePath
                       : `/images?path=${encodeURIComponent(filePath)}`;
 
                     return (
                       <div
                         key={idx}
-                        className={`image-item ${isSelected ? 'selected' : ''}`}
+                        className="space-y-2 cursor-pointer group"
                         onClick={() => handleFileToggle(filePath)}
                       >
-                        <div className="image-wrapper">
+                        <div className={`relative overflow-hidden rounded-lg h-32 bg-maya-darker flex items-center justify-center border-2 transition-all duration-300 ${
+                          isSelected
+                            ? 'border-saffron-400 shadow-lg shadow-saffron-400/30'
+                            : 'border-saffron-400/30 group-hover:border-saffron-400'
+                        }`}>
                           <img
                             src={imageUrl}
                             alt={fileName}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                             onError={(e) => {
                               e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzJBMkEyQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM3RjdGN0YiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBub3QgZm91bmQ8L3RleHQ+PC9zdmc+';
                             }}
                           />
                           {isSelected && (
-                            <div className="selected-overlay">
-                              <div className="selected-checkmark">✓</div>
+                            <div className="absolute inset-0 bg-saffron-400/20 flex items-center justify-center">
+                              <div className="text-4xl font-bold text-saffron-300 animate-bounce">✓</div>
                             </div>
                           )}
                         </div>
-                        <p className="image-name" title={fileName}>
+                        <p className="text-parchment-200 text-sm truncate" title={fileName}>
                           {fileName}
                         </p>
-                        <label className="checkbox-label">
+                        <label className="flex items-center gap-2 cursor-pointer text-parchment-400 hover:text-saffron-300 transition-colors">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleFileToggle(filePath)}
                             onClick={(e) => e.stopPropagation()}
+                            className="w-4 h-4 accent-saffron-400"
                           />
-                          <span>Delete</span>
+                          <span className="text-xs font-medium">Delete</span>
                         </label>
                       </div>
                     );
@@ -143,22 +155,30 @@ const ClustersView = () => {
             ))}
           </div>
 
-          <div className="pagination">
+          <div className="flex items-center justify-center gap-4 mt-8">
             <button
               onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
               disabled={currentPage === 0}
-              className="pagination-button"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                currentPage === 0
+                  ? 'bg-saffron-400/20 text-saffron-400/50 cursor-not-allowed'
+                  : 'btn-primary'
+              }`}
             >
               <ChevronLeft size={20} />
               Previous
             </button>
-            <span className="pagination-info">
-              Page {currentPage + 1} of {totalPages} ({totalClusters} clusters)
+            <span className="text-parchment-300 font-medium text-center min-w-60">
+              Page {currentPage + 1} of {totalPages} ({totalClusters} source souls)
             </span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={currentPage >= totalPages - 1}
-              className="pagination-button"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                currentPage >= totalPages - 1
+                  ? 'bg-saffron-400/20 text-saffron-400/50 cursor-not-allowed'
+                  : 'btn-primary'
+              }`}
             >
               Next
               <ChevronRight size={20} />
