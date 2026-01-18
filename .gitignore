@@ -5,3 +5,5 @@ dataset/
 dataset_copydays/
 *.ipynb
 req.txt
+temp_query.jpg
+generate_crop.py

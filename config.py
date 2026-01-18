@@ -67,6 +67,19 @@ ATTACK_CATEGORIES = {
     "Strong": "strong",
 }
 
+CROPS_PATH = "./dataset_copydays/crops" 
+
+CROP_CATEGORIES = {
+    "Crop 10%": "crop_10_percent",
+    "Crop 20%": "crop_20_percent",
+    "Crop 30%": "crop_30_percent",
+    "Crop 40%": "crop_40_percent",
+    "Crop 50%": "crop_50_percent",
+    "Crop 60%": "crop_60_percent",
+    "Crop 70%": "crop_70_percent",
+    "Crop 75%": "crop_75_percent",
+}
+
 # Benchmark Thresholds
 EXCELLENT_RECALL_THRESHOLD = 0.9
 WEAK_RECALL_THRESHOLD = 0.5

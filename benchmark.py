@@ -7,11 +7,23 @@ import config
 os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB
 
 def get_attack_folders():
- 
-    return {
-        name: os.path.join(config.DATASET_PATH, relative_path)
-        for name, relative_path in config.ATTACK_CATEGORIES.items()
-    }
+    """
+    Returns a dictionary of { "Category Name": "Full Folder Path" }
+    Combines standard attacks (JPEG) and new Crop attacks.
+    """
+    folders = {}
+    
+    # 1. Add Standard Attacks (JPEG, Strong) from DATASET_PATH
+    for name, relative_path in config.ATTACK_CATEGORIES.items():
+        folders[name] = os.path.join(config.DATASET_PATH, relative_path)
+        
+    # 2. Add Crop Attacks from CROPS_PATH
+    # We check if CROP_CATEGORIES exists to avoid errors if you haven't updated config yet
+    if hasattr(config, 'CROP_CATEGORIES'):
+        for name, relative_path in config.CROP_CATEGORIES.items():
+            folders[name] = os.path.join(config.CROPS_PATH, relative_path)
+            
+    return folders
 
 def evaluate_category(detector, category_name, folder_path):
    
