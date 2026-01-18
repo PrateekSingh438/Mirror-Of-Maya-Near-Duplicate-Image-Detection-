@@ -4,40 +4,23 @@ import time
 import pandas as pd
 import plotly.express as px
 from sklearn.decomposition import PCA
-import networkx as nx
 from engine import DuplicateDetector
 from evaluate import calculate_metrics, analyze_match_types
 from utils import (
     get_dir_size, auto_generate_ground_truth, 
-    calculate_wasted_space, is_original_file
+    calculate_wasted_space, is_original_file,
+    organize_clusters_with_originals, auto_select_duplicates_for_deletion
 )
 import config
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB
 
-def group_duplicates_into_clusters(duplicates_list):
-    
-    if not duplicates_list:
-        return []
-    
-    g = nx.Graph()
-    for item in duplicates_list:
-        g.add_edge(item['file1'], item['file2'])
-    
-    clusters = []
-    for component in nx.connected_components(g):
-        if len(component) > 1:
-            clusters.append(list(component))
-    return clusters
-
-# Page Configuration
 st.set_page_config(
     page_title=config.PAGE_TITLE, 
     layout=config.LAYOUT, 
     page_icon=config.PAGE_ICON
 )
 
-# Session State Initialization
 if 'detector' not in st.session_state:
     st.session_state.detector = None
 if 'duplicates' not in st.session_state:
@@ -45,7 +28,6 @@ if 'duplicates' not in st.session_state:
 if 'deletion_queue' not in st.session_state:
     st.session_state.deletion_queue = set()
 
-# Sidebar Configuration
 with st.sidebar:
     st.header("Settings")
     
@@ -78,11 +60,9 @@ with st.sidebar:
             st.success("Scan Complete!")
             st.rerun()
 
-# Main Title
 st.title(config.PAGE_TITLE)
 st.markdown("Intelligent Deduplication & Analytics Engine")
 
-# Tabs
 tab_analysis, tab_visual, tab_action, tab_query = st.tabs([
     "Metrics & Report", 
     "Galaxy Cluster (Visual)", 
@@ -90,7 +70,6 @@ tab_analysis, tab_visual, tab_action, tab_query = st.tabs([
     "Query Tool"
 ])
 
-# Tab 1: Analysis & Metrics
 with tab_analysis:
     if not st.session_state.duplicates:
         st.info("Click Fresh Scan in the sidebar to start.")
@@ -135,7 +114,6 @@ with tab_analysis:
             else:
                 st.success("System is anchoring to originals correctly.")
 
-# Tab 2: Visualization
 with tab_visual:
     st.header("Image Embedding Clusters")
     
@@ -163,78 +141,114 @@ with tab_visual:
                     title=f"Galaxy View of {limit} Images",
                     color_discrete_sequence=[config.GALAXY_COLOR]
                 )
-                st.plotly_chart(fig, width='stretch')
+                st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Please scan the database first.")
 
-# Tab 3: Action & Deletion
 with tab_action:
     st.header("Review & Delete Clusters")
     
     if st.session_state.duplicates:
-        clusters = group_duplicates_into_clusters(st.session_state.duplicates)
-        st.info(f"Identified {len(clusters)} unique groups of duplicates.")
-
+        organized_clusters = organize_clusters_with_originals(st.session_state.duplicates)
+        
+        st.info(f"Found {len(organized_clusters)} groups with duplicates")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("Auto-Select All Duplicates", type="primary"):
+                st.session_state.deletion_queue = auto_select_duplicates_for_deletion(organized_clusters)
+                st.rerun()
+        
+        with col2:
+            if st.button("Clear Selection"):
+                st.session_state.deletion_queue.clear()
+                st.rerun()
+        
+        with col3:
+            st.metric("Marked for Deletion", len(st.session_state.deletion_queue))
+        
+        st.divider()
+        
         if 'page' not in st.session_state:
             st.session_state.page = 0
         
         start_idx = st.session_state.page * config.CLUSTERS_PER_PAGE
         end_idx = start_idx + config.CLUSTERS_PER_PAGE
-        current_clusters = clusters[start_idx:end_idx]
+        current_clusters = organized_clusters[start_idx:end_idx]
         
         for i, cluster in enumerate(current_clusters):
-            cluster.sort()
             with st.container(border=True):
-                st.markdown(f"Group {start_idx + i + 1}")
-                cols = st.columns(min(len(cluster), config.MAX_IMAGES_PER_ROW))
+                st.markdown(f"### Group {start_idx + i + 1} ({cluster['total_count']} files)")
                 
-                for idx, file_path in enumerate(cluster):
-                    col_idx = idx % config.MAX_IMAGES_PER_ROW
-                    with cols[col_idx]:
-                        fname = os.path.basename(file_path)
-                        st.image(file_path, width='stretch')
-                        st.caption(fname)
-                        
-                        for d in st.session_state.duplicates:
-                            if d['file1'] == file_path or d['file2'] == file_path:
-                                if d.get('method') == "pHash":
-                                    st.markdown("**pHash Match**")
-                                    break
-                                    
-                        is_selected = file_path in st.session_state.deletion_queue
-                        if st.checkbox("Delete", value=is_selected, key=f"del_{start_idx+i}_{idx}"):
-                            st.session_state.deletion_queue.add(file_path)
-                        else:
-                            st.session_state.deletion_queue.discard(file_path)
+                st.markdown("**ORIGINAL (Keep)**")
+                col_orig = st.columns(1)[0]
+                with col_orig:
+                    st.image(cluster['original'], use_container_width=True)
+                    st.caption(f"{os.path.basename(cluster['original'])}")
+                
+                st.markdown("---")
+                
+                if cluster['duplicates']:
+                    st.markdown(f"**DUPLICATES ({len(cluster['duplicates'])})**")
+                    
+                    dup_cols = st.columns(min(len(cluster['duplicates']), config.MAX_IMAGES_PER_ROW))
+                    
+                    for idx, dup_info in enumerate(cluster['duplicates']):
+                        col_idx = idx % config.MAX_IMAGES_PER_ROW
+                        with dup_cols[col_idx]:
+                            dup_path = dup_info['path']
+                            st.image(dup_path, use_container_width=True)
+                            st.caption(f"{os.path.basename(dup_path)}")
+                            st.caption(f"**Similarity: {dup_info['score']*100:.1f}%**")
+                            
+                            is_selected = dup_path in st.session_state.deletion_queue
+                            if st.checkbox("Delete", value=is_selected, key=f"del_{start_idx+i}_{idx}"):
+                                st.session_state.deletion_queue.add(dup_path)
+                            else:
+                                st.session_state.deletion_queue.discard(dup_path)
 
         c1, c2, c3 = st.columns([1, 2, 1])
         if st.session_state.page > 0:
             if c1.button("Previous"):
                 st.session_state.page -= 1
-        if end_idx < len(clusters):
+                st.rerun()
+        if end_idx < len(organized_clusters):
             if c3.button("Next"):
                 st.session_state.page += 1
-            
+                st.rerun()
+        
         st.divider()
+        
         pending_count = len(st.session_state.deletion_queue)
         if pending_count > 0:
-            st.warning(f"{pending_count} files selected for deletion.")
-            if st.button(f"EXECUTE DELETION ({pending_count} Files)"):
+            space_saved = 0
+            for file_path in st.session_state.deletion_queue:
+                try:
+                    space_saved += os.path.getsize(file_path) / config.BYTES_TO_MB
+                except:
+                    pass
+            
+            st.warning(f"{pending_count} files selected | {space_saved:.2f} MB will be freed")
+            
+            if st.button(f"EXECUTE DELETION ({pending_count} Files)", type="primary"):
+                deleted_count = 0
                 for file_path in list(st.session_state.deletion_queue):
                     try:
                         if os.path.exists(file_path):
                             os.remove(file_path)
                             st.session_state.deletion_queue.discard(file_path)
-                    except Exception:
-                        pass
-                st.success("Deleted!")
+                            deleted_count += 1
+                    except Exception as e:
+                        st.error(f"Failed to delete {os.path.basename(file_path)}: {e}")
+                
+                st.success(f"Deleted {deleted_count} files!")
                 st.session_state.duplicates = []
                 time.sleep(1)
                 st.rerun()
     else:
-        st.info("No duplicates found yet. Reload the database.")
+        st.info("No duplicates found yet. Click 'Fresh Scan' in the sidebar.")
 
-# Tab 4: Query Tool
 with tab_query:
     st.header("Search Single Image")
     uploaded_file = st.file_uploader("Upload Query Image", type=["jpg", "png"])
