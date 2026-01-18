@@ -5,11 +5,11 @@ DATASET_PATH = "./dataset_copydays"
 ORIGINAL_DIR_NAME = "original"
 
 # Model Configuration
-MODEL_ID = "facebook/dinov2-base"
+MODEL_ID = "facebook/dinov2-small"
 MODEL_OPTIONS = {
-    "Small (Fast)": "facebook/dinov2-small",
-    "Base (Standard)": "facebook/dinov2-base",
-    "Large (Accurate)": "facebook/dinov2-large"
+    "Small": "facebook/dinov2-small",
+    "Base": "facebook/dinov2-base",
+    "Large": "facebook/dinov2-large"
 }
 
 # Device Configuration
@@ -17,8 +17,8 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 32
 
 # Similarity Thresholds
-SIMILARITY_THRESHOLD = 0.92
-DEFAULT_THRESHOLD_PERCENT = 82
+SIMILARITY_THRESHOLD = 0.85
+DEFAULT_THRESHOLD_PERCENT = 85
 BENCHMARK_THRESHOLD = 0.80
 
 # Hash Configuration
