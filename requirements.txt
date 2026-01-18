@@ -11,10 +11,9 @@ imagehash==4.3.1
 streamlit==1.52.2
 pandas==2.2.3
 plotly==5.24.1
+fastapi
+uvicorn
+python-multipart
+networkx
 
-fastapi==0.115.6
-uvicorn==0.34.0
-python-multipart==0.0.17
-networkx==3.3.1
-python-multipart==0.0.17
 
