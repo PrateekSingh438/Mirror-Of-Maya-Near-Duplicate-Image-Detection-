@@ -7,9 +7,9 @@ ORIGINAL_DIR_NAME = "original"
 # Model Configuration
 MODEL_ID = "facebook/dinov2-base"
 MODEL_OPTIONS = {
-    "Small (Fast)": "facebook/dinov2-small",
-    "Base (Standard)": "facebook/dinov2-base",
-    "Large (Accurate)": "facebook/dinov2-large"
+    "Small": "facebook/dinov2-small",
+    "Base": "facebook/dinov2-base",
+    "Large": "facebook/dinov2-large"
 }
 
 # Device Configuration
