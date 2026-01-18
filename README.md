@@ -311,6 +311,11 @@ MAX_IMAGES_PER_ROW = 5
 - Standard benchmark for image copy detection
 - Contains original images and various attack transformations
 
+Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
+
+crop dataset: https://drive.google.com/drive/folders/1DV-GJaaJw1XFsNEaQb2V2Ccw7ZUth1_g?usp=drive_link
+
+
 
 
 
