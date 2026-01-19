@@ -3,7 +3,10 @@ __pycache__/
 *.pyc
 dataset/
 dataset_copydays/
+dataset_holidays/
 *.ipynb
 req.txt
 temp_query.jpg
 generate_crop.py
+node_modules
+frontend2
