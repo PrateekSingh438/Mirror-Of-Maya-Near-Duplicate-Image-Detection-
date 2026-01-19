@@ -24,7 +24,7 @@ const Sidebar = ({
 
           {/* Model Select */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-parchment-600 mb-2">Chakra Model</label>
+            <label className="block text-sm font-medium text-yellow-300 mb-2">Chakra Model</label>
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
@@ -63,7 +63,7 @@ const Sidebar = ({
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-full h-1 bg-indigo-700/30 rounded-lg appearance-none cursor-pointer accent-saffron-400"
             />
-            <div className="flex justify-between text-xs text-parchment-700 mt-2">
+            <div className="flex justify-between text-xs text-yellow-300 mt-2">
               <span>Lenient</span>
               <span>Strict</span>
             </div>
