@@ -1,5 +1,4 @@
 import { Scan, Settings, Zap } from 'lucide-react';
-import './Sidebar.css';
 
 const Sidebar = ({
   datasetPath,
@@ -14,83 +13,90 @@ const Sidebar = ({
   scanStatus,
 }) => {
   return (
-    <aside className="sidebar">
-      <div className="sidebar-content">
-        <div className="sidebar-section">
-          <div className="sidebar-header">
+    <aside className="fixed left-0 top-20 w-72 h-[calc(100vh-80px)] bg-gradient-to-b from-maya-darker/98 to-indigo-900/95 backdrop-blur-lg border-r border-saffron-400/20 overflow-y-auto z-40">
+      <div className="p-6 space-y-6">
+        {/* Settings Section */}
+        <div>
+          <div className="flex items-center gap-2 mb-4 text-saffron-400">
             <Settings size={20} />
-            <h2>Settings</h2>
+            <h2 className="text-lg font-semibold">Sacred Settings</h2>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="model-select">Model</label>
+          {/* Model Select */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-yellow-300 mb-2">Chakra Model</label>
             <select
-              id="model-select"
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="select-input"
+              className="input-field text-sm"
             >
               {Object.entries(availableModels).map(([label, value]) => (
-                <option key={value} value={value}>
+                <option key={value} value={value} className="bg-maya-darker">
                   {label}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="dataset-path">Dataset Path</label>
+          {/* Dataset Path */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-parchment-600 mb-2">Image Collection</label>
             <input
-              id="dataset-path"
               type="text"
               value={datasetPath}
               onChange={(e) => setDatasetPath(e.target.value)}
-              className="text-input"
+              className="input-field text-sm"
               placeholder="./dataset_copydays"
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="threshold">
-              Similarity Threshold: {threshold}%
+          {/* Threshold Slider */}
+          <div>
+            <label className="block text-sm font-medium text-parchment-600 mb-3">
+              Discernment Threshold: <span className="text-saffron-400 font-bold">{threshold}%</span>
             </label>
             <input
-              id="threshold"
               type="range"
               min="50"
               max="100"
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
-              className="range-input"
+              className="w-full h-1 bg-indigo-700/30 rounded-lg appearance-none cursor-pointer accent-saffron-400"
             />
-            <div className="range-labels">
-              <span>50%</span>
-              <span>100%</span>
+            <div className="flex justify-between text-xs text-yellow-300 mt-2">
+              <span>Lenient</span>
+              <span>Strict</span>
             </div>
           </div>
         </div>
 
-        <div className="sidebar-section">
+        {/* Scan Section */}
+        <div className="border-t border-indigo-700/30 pt-6">
           <button
             onClick={onScan}
             disabled={isScanning}
-            className="scan-button"
+            className={`btn-primary w-full ${isScanning ? 'opacity-75 cursor-not-allowed' : ''}`}
           >
             {isScanning ? (
               <>
-                <Zap className="button-icon spinning" size={20} />
-                Scanning...
+                <Zap className="w-5 h-5 animate-spin" />
+                <span>Invoking Chakra...</span>
               </>
             ) : (
               <>
-                <Scan className="button-icon" size={20} />
-                Fresh Scan
+                <Scan className="w-5 h-5" />
+                <span>Begin Discernment</span>
               </>
             )}
           </button>
 
+          {/* Status Message */}
           {scanStatus && (
-            <div className={`status-message ${isScanning ? 'info' : 'success'}`}>
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              isScanning 
+                ? 'status-info' 
+                : 'status-success'
+            }`}>
               {scanStatus}
             </div>
           )}

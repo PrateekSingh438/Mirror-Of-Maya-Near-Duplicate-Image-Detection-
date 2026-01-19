@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { apiService } from '../services/api.js';
-import './MetricsView.css';
 
 const MetricsView = ({ metrics }) => {
   const [localMetrics, setLocalMetrics] = useState(metrics);
@@ -27,8 +26,8 @@ const MetricsView = ({ metrics }) => {
 
   if (!localMetrics || localMetrics.status === 'no_data') {
     return (
-      <div className="metrics-empty">
-        <p>No metrics available. Please scan a dataset first.</p>
+      <div className="p-6 flex items-center justify-center">
+        <p className="text-parchment-300 text-lg">No sacred insights available. Begin discernment with the Chakra first.</p>
       </div>
     );
   }
@@ -44,16 +43,16 @@ const MetricsView = ({ metrics }) => {
   ];
 
   return (
-    <div className="metrics-view">
-      <div className="metrics-header">
-        <h2>Detailed Metrics & Report</h2>
-        <p className="metrics-subtitle">Comprehensive analysis of duplicate detection performance</p>
+    <div className="p-6">
+      <div className="mb-8">
+        <h2 className="text-4xl font-bold text-gradient-saffron mb-3">Chakra Enlightenment & Insights</h2>
+        <p className="text-parchment-300">Sacred analysis of the Chakra's discernment performance</p>
       </div>
 
-      <div className="metrics-content">
-        <div className="metrics-section">
-          <h3>Storage Analysis</h3>
-          <div className="chart-container">
+      <div className="space-y-8">
+        <div className="card">
+          <h3 className="text-2xl font-bold text-saffron-400 mb-6">Form & Substance Analysis</h3>
+          <div className="bg-maya-darker rounded-lg p-4 mb-6">
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -82,29 +81,29 @@ const MetricsView = ({ metrics }) => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="storage-details">
-            <div className="detail-item">
-              <span className="detail-label">Total Storage:</span>
-              <span className="detail-value">{localMetrics.storage.total_mb.toFixed(2)} MB</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-gradient-to-br from-indigo-900/30 to-maya-darker border border-indigo-400/30 rounded-lg">
+              <span className="text-parchment-400 text-sm">Sacred Archive:</span>
+              <p className="text-2xl font-bold text-indigo-300">{localMetrics.storage.total_mb.toFixed(2)} MB</p>
             </div>
-            <div className="detail-item">
-              <span className="detail-label">Wasted Space:</span>
-              <span className="detail-value">{localMetrics.storage.wasted_mb.toFixed(2)} MB</span>
+            <div className="p-4 bg-gradient-to-br from-orange-900/30 to-maya-darker border border-orange-400/30 rounded-lg">
+              <span className="text-parchment-400 text-sm">Illusory Space:</span>
+              <p className="text-2xl font-bold text-orange-300">{localMetrics.storage.wasted_mb.toFixed(2)} MB</p>
             </div>
-            <div className="detail-item">
-              <span className="detail-label">Optimized Size:</span>
-              <span className="detail-value">{localMetrics.storage.optimized_mb.toFixed(2)} MB</span>
+            <div className="p-4 bg-gradient-to-br from-saffron-900/30 to-maya-darker border border-saffron-400/30 rounded-lg">
+              <span className="text-parchment-400 text-sm">Liberated Form:</span>
+              <p className="text-2xl font-bold text-saffron-300">{localMetrics.storage.optimized_mb.toFixed(2)} MB</p>
             </div>
-            <div className="detail-item highlight">
-              <span className="detail-label">Savings:</span>
-              <span className="detail-value">{localMetrics.storage.percent_saved.toFixed(1)}%</span>
+            <div className="p-4 bg-gradient-to-br from-gold/30 to-maya-darker border border-gold/50 rounded-lg shadow-lg shadow-gold/10">
+              <span className="text-parchment-400 text-sm">Truth Revealed:</span>
+              <p className="text-2xl font-bold text-gold">{localMetrics.storage.percent_saved.toFixed(1)}%</p>
             </div>
           </div>
         </div>
 
-        <div className="metrics-section">
-          <h3>Match Type Analysis</h3>
-          <div className="chart-container">
+        <div className="card">
+          <h3 className="text-2xl font-bold text-saffron-400 mb-6">Manifestation Patterns</h3>
+          <div className="bg-maya-darker rounded-lg p-4">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={analysisData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(139, 78, 158, 0.2)" />
@@ -128,31 +127,31 @@ const MetricsView = ({ metrics }) => {
           </div>
         </div>
 
-        <div className="metrics-section">
-          <h3>Performance Metrics</h3>
-          <div className="performance-grid">
-            <div className="performance-card">
-              <h4>F1 Score</h4>
-              <p className="performance-value">{localMetrics.model.f1_score.toFixed(4)}</p>
-              <p className="performance-description">
+        <div className="card">
+          <h3 className="text-2xl font-bold text-saffron-400 mb-6">Chakra Potency</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-6 bg-gradient-to-br from-green-900/30 to-maya-darker border border-green-400/30 rounded-lg hover:shadow-lg hover:shadow-green-400/10 transition-all duration-300">
+              <h4 className="text-parchment-300 font-semibold mb-2">Discernment Power</h4>
+              <p className="text-3xl font-bold text-green-300">{localMetrics.model.f1_score.toFixed(4)}</p>
+              <p className="text-parchment-400 text-sm mt-2">
                 {localMetrics.model.f1_score >= 0.8
-                  ? 'Excellent performance'
+                  ? 'Exceptional clarity'
                   : localMetrics.model.f1_score >= 0.6
-                  ? 'Good performance'
-                  : 'Needs improvement'}
+                  ? 'Substantial insight'
+                  : 'Needs refinement'}
               </p>
             </div>
-            <div className="performance-card">
-              <h4>Total Images Indexed</h4>
-              <p className="performance-value">{localMetrics.index.total_images}</p>
+            <div className="p-6 bg-gradient-to-br from-blue-900/30 to-maya-darker border border-blue-400/30 rounded-lg hover:shadow-lg hover:shadow-blue-400/10 transition-all duration-300">
+              <h4 className="text-parchment-300 font-semibold mb-2">Forms Witnessed</h4>
+              <p className="text-3xl font-bold text-blue-300">{localMetrics.index.total_images}</p>
             </div>
-            <div className="performance-card">
-              <h4>Duplicate Pairs</h4>
-              <p className="performance-value">{localMetrics.duplicates.total_pairs}</p>
+            <div className="p-6 bg-gradient-to-br from-purple-900/30 to-maya-darker border border-purple-400/30 rounded-lg hover:shadow-lg hover:shadow-purple-400/10 transition-all duration-300">
+              <h4 className="text-parchment-300 font-semibold mb-2">Maya Pairs Detected</h4>
+              <p className="text-3xl font-bold text-purple-300">{localMetrics.duplicates.total_pairs}</p>
             </div>
-            <div className="performance-card">
-              <h4>Clusters Found</h4>
-              <p className="performance-value">{localMetrics.duplicates.clusters}</p>
+            <div className="p-6 bg-gradient-to-br from-cyan-900/30 to-maya-darker border border-cyan-400/30 rounded-lg hover:shadow-lg hover:shadow-cyan-400/10 transition-all duration-300">
+              <h4 className="text-parchment-300 font-semibold mb-2">Source Souls Found</h4>
+              <p className="text-3xl font-bold text-cyan-300">{localMetrics.duplicates.clusters}</p>
             </div>
           </div>
         </div>

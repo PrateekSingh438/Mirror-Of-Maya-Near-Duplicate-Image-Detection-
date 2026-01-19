@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { Upload, Search, Image as ImageIcon, X } from 'lucide-react';
 import { apiService } from '../services/api.js';
-import './QueryTool.css';
 
 const QueryTool = ({ threshold }) => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -55,27 +54,31 @@ const QueryTool = ({ threshold }) => {
   };
 
   return (
-    <div className="query-tool">
-      <div className="query-header">
-        <h2>Query Tool - Sudarshana Chakra Search</h2>
-        <p className="query-subtitle">Upload an image to find its duplicates across the dataset</p>
+    <div className="p-6">
+      <div className="mb-8">
+        <h2 className="text-4xl font-bold text-gradient-saffron mb-3">Chakra Inquiry - Sudarshana Search</h2>
+        <p className="text-parchment-300">Offer an image to the Chakra to reveal its duplicates across all realms</p>
       </div>
 
-      <div className="query-container">
-        <div className="upload-section">
+      <div className="space-y-8">
+        <div className="space-y-4">
           <div
-            className="upload-area"
+            className={`border-2 border-dashed rounded-lg p-8 cursor-pointer transition-all duration-300 flex flex-col items-center justify-center min-h-96 ${
+              previewUrl
+                ? 'border-saffron-400 bg-saffron-400/5'
+                : 'border-saffron-400/40 hover:border-saffron-400 hover:bg-saffron-400/10'
+            }`}
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => {
               e.preventDefault();
-              e.currentTarget.classList.add('dragover');
+              e.currentTarget.classList.add('ring-2', 'ring-saffron-300', 'ring-offset-2', 'ring-offset-maya-dark');
             }}
             onDragLeave={(e) => {
-              e.currentTarget.classList.remove('dragover');
+              e.currentTarget.classList.remove('ring-2', 'ring-saffron-300', 'ring-offset-2', 'ring-offset-maya-dark');
             }}
             onDrop={(e) => {
               e.preventDefault();
-              e.currentTarget.classList.remove('dragover');
+              e.currentTarget.classList.remove('ring-2', 'ring-saffron-300', 'ring-offset-2', 'ring-offset-maya-dark');
               const file = e.dataTransfer.files[0];
               if (file && file.type.startsWith('image/')) {
                 setSelectedFile(file);
@@ -86,17 +89,23 @@ const QueryTool = ({ threshold }) => {
             }}
           >
             {previewUrl ? (
-              <div className="preview-container">
-                <img src={previewUrl} alt="Preview" className="preview-image" />
-                <button onClick={handleClear} className="clear-button">
+              <div className="relative w-full h-full flex items-center justify-center group">
+                <img src={previewUrl} alt="Preview" className="max-w-full max-h-80 rounded-lg object-contain" />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClear();
+                  }}
+                  className="absolute top-2 right-2 p-2 bg-red-600 hover:bg-red-700 rounded-full text-white shadow-lg transform group-hover:scale-110 transition-transform"
+                >
                   <X size={20} />
                 </button>
               </div>
             ) : (
               <>
-                <Upload size={48} className="upload-icon" />
-                <p className="upload-text">Click or drag an image here</p>
-                <p className="upload-hint">Supports JPG, PNG, BMP</p>
+                <Upload size={48} className="text-saffron-400 mb-4 animate-bounce" />
+                <p className="text-xl text-parchment-200 font-medium">Offer your image to the Chakra</p>
+                <p className="text-parchment-400 text-sm mt-2">JPG, PNG, BMP supported</p>
               </>
             )}
             <input
@@ -104,7 +113,7 @@ const QueryTool = ({ threshold }) => {
               type="file"
               accept="image/*"
               onChange={handleFileSelect}
-              className="file-input"
+              className="hidden"
             />
           </div>
 
@@ -112,17 +121,21 @@ const QueryTool = ({ threshold }) => {
             <button
               onClick={handleSearch}
               disabled={isSearching}
-              className="search-button"
+              className={`w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all duration-300 ${
+                isSearching
+                  ? 'bg-saffron-500 text-maya-darker cursor-wait opacity-80'
+                  : 'btn-primary'
+              }`}
             >
               {isSearching ? (
                 <>
-                  <div className="spinner-small"></div>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-maya-darker border-t-parchment-300"></div>
                   Searching...
                 </>
               ) : (
                 <>
                   <Search size={20} />
-                  Search for Duplicates
+                  Invoke Sudarshana
                 </>
               )}
             </button>
@@ -130,31 +143,35 @@ const QueryTool = ({ threshold }) => {
         </div>
 
         {results.length > 0 && (
-          <div className="results-section">
-            <h3>Found {results.length} match{results.length !== 1 ? 'es' : ''}</h3>
-            <div className="results-grid">
+          <div className="space-y-4">
+            <h3 className="text-2xl font-bold text-saffron-400">Maya Detected - {results.length} form{results.length !== 1 ? 's' : ''}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {results.map((result, idx) => {
                 const imageUrl = getImageUrl(result.path);
                 const fileName = result.path.split(/[/\\]/).pop() || result.path;
 
                 return (
-                  <div key={idx} className="result-card">
-                    <div className="result-image-wrapper">
+                  <div
+                    key={idx}
+                    className="card group hover:shadow-lg hover:shadow-saffron-400/20 transform hover:-translate-y-1 transition-all duration-300"
+                  >
+                    <div className="relative mb-3 overflow-hidden rounded-md h-48 bg-maya-darker flex items-center justify-center">
                       <img
                         src={imageUrl}
                         alt={fileName}
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => {
                           e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzJBMkEyQSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM3RjdGN0YiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBub3QgZm91bmQ8L3RleHQ+PC9zdmc+';
                         }}
                       />
-                      <div className="similarity-badge">
+                      <div className="absolute top-2 right-2 px-3 py-1 bg-gradient-to-r from-saffron-400 to-gold rounded-full text-maya-darker font-bold text-sm shadow-lg">
                         {(result.score * 100).toFixed(1)}%
                       </div>
                     </div>
-                    <p className="result-name" title={fileName}>
+                    <p className="text-parchment-200 font-medium truncate" title={fileName}>
                       {fileName}
                     </p>
-                    <p className="result-score">
+                    <p className="text-parchment-400 text-sm">
                       Similarity: {(result.score * 100).toFixed(2)}%
                     </p>
                   </div>
@@ -165,9 +182,9 @@ const QueryTool = ({ threshold }) => {
         )}
 
         {results.length === 0 && selectedFile && !isSearching && (
-          <div className="no-results">
-            <ImageIcon size={48} className="no-results-icon" />
-            <p>No matches found. Try adjusting the similarity threshold.</p>
+          <div className="flex flex-col items-center justify-center py-12 space-y-4">
+            <ImageIcon size={48} className="text-indigo-400 animate-float" />
+            <p className="text-parchment-300 text-lg">No illusions detected. The source soul stands unique and true.</p>
           </div>
         )}
       </div>
