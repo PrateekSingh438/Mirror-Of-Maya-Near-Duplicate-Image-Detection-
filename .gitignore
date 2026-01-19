@@ -9,3 +9,5 @@ temp_query.jpg
 generate_crop.py
 node_modules/
 .DS_Store
+.vs_code/
+.env
