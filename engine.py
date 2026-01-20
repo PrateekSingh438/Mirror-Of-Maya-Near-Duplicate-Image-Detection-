@@ -255,14 +255,18 @@ class DuplicateDetector:
         D, I = self.index.search(query_emb, k)
         
         matches = []
+        seen = set()
         for score, idx in zip(D[0], I[0]):
-            if idx != -1 and score > threshold:
-                matches.append({
+            if idx == -1 or score <= threshold:
+                break
+            path = self.stored_files[idx]
+            if path in seen:
+                continue
+            seen.add(path)
+            matches.append({
                     "path": self.stored_files[idx],
                     "score": float(score),
                     "method": "DINOv2"
                 })
-            else:
-                break
-        
+
         return matches
