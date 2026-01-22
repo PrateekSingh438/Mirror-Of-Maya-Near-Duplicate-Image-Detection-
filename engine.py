@@ -1,268 +1,393 @@
 import os
 import torch
-import torch.nn.functional as F
-from transformers import AutoImageProcessor, AutoModel
 import faiss
 import numpy as np
 import imagehash
 from PIL import Image
 from tqdm import tqdm
-import cv2
+from collections import defaultdict
+import warnings
+from transformers import AutoImageProcessor, AutoModel
+import pickle
+import hashlib
 import config
-from data_loader import get_tta_views
-from utils import walk_image_files
+from utils import walk_image_files, auto_generate_ground_truth, normalize_pair
 
+warnings.filterwarnings('ignore')
 os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB
 
 class DuplicateDetector:
     def __init__(self):
-        print(f"Initializing Hybrid Detector on {config.DEVICE}")
+        print(f"🚀 Initializing Detector on {config.DEVICE}")
         self.device = config.DEVICE
         
-        # Use higher resolution for better pixelation detection
-        self.processor = AutoImageProcessor.from_pretrained(
-            config.MODEL_ID,
-            size={"height": 518, "width": 518}
-        )
-        self.model = AutoModel.from_pretrained(config.MODEL_ID)
-        
-        # Disable CPU quantization for accurate similarity scores
-        # Quantization causes issues with heavily compressed images
-        self.model = self.model.to(self.device)
+        # Load model
+        self.processor = AutoImageProcessor.from_pretrained(config.MODEL_ID)
+        self.model = AutoModel.from_pretrained(config.MODEL_ID).to(self.device)
         self.model.eval()
         
+        # Initialize FAISS index
         self.dimension = self.model.config.hidden_size
         self.index = faiss.IndexFlatIP(self.dimension)
         
-        self.phash_map = {} 
-        self.fast_duplicates = []
+        # Storage
         self.stored_files = []
-
-    def _calculate_sharpness(self, image_path):
-        """Calculate image sharpness using Laplacian variance"""
+        self.hash_buckets = defaultdict(list)
+        self.fast_duplicates = []
+        self.optimal_threshold = config.DEFAULT_THRESHOLD
+        self.file_checksums = {}  # For incremental indexing
+        
+        # Try to load existing index
+        if config.ENABLE_INCREMENTAL_INDEXING:
+            self._load_index()
+    
+    def _compute_file_checksum(self, filepath):
+        """Compute MD5 checksum for file change detection"""
         try:
-            img = cv2.imread(image_path)
-            if img is None:
-                return 0
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            sharpness = cv2.Laplacian(gray, cv2.CV_64F).var()
-            return sharpness
+            with open(filepath, 'rb') as f:
+                return hashlib.md5(f.read()).hexdigest()
         except:
-            return 0
-
-    def _generate_embedding(self, image_path, use_tta=False):
-        if use_tta:
-            return self._generate_robust_embedding(image_path)
-        return self._generate_standard_embedding(image_path)
-
-    def _generate_standard_embedding(self, image_path):
+            return None
+    
+    def _generate_embedding(self, image_path):
+        """Generate DINOv2 embedding for image"""
         try:
             img = Image.open(image_path).convert("RGB")
-            inputs = self.processor(images=img, return_tensors="pt")
-            
-            if self.device != "cpu":
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            inputs = self.processor(images=img, return_tensors="pt").to(self.device)
             
             with torch.no_grad():
                 outputs = self.model(**inputs)
-                emb = F.normalize(outputs.last_hidden_state[:, 0, :], p=2, dim=1)
+                embeddings = outputs.last_hidden_state.mean(dim=1)
+                vector = embeddings.detach().cpu().numpy().astype('float32')
+                faiss.normalize_L2(vector)
             
-            return emb.cpu().numpy()
-        except Exception:
+            return vector
+        except Exception as e:
+            print(f"⚠️ Failed to process {image_path}: {str(e)}")
             return None
-
-    def _generate_robust_embedding(self, image_path):
-        views = get_tta_views(image_path)
-        if not views:
-            return None
-        
+    
+    def _compute_hash(self, image_path):
+        """Compute perceptual hash for image"""
         try:
-            inputs = self.processor(images=views, return_tensors="pt")
-            
-            if self.device != "cpu":
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                embeddings = outputs.last_hidden_state[:, 0, :]
-                embeddings = F.normalize(embeddings, p=2, dim=1)
-            
-            avg_emb = embeddings.mean(dim=0).cpu().numpy()
-            norm = np.linalg.norm(avg_emb)
-            return avg_emb / norm if norm > 0 else avg_emb
-        except Exception:
-            return None
-
-    def _compute_phash(self, image_path):
-        try:
-            img = Image.open(image_path)
-            return str(imagehash.phash(img, hash_size=config.HASH_SIZE))
+            img = Image.open(image_path).convert('RGB')
+            return str(imagehash.dhash(img, hash_size=config.HASH_SIZE))
         except:
             return None
-
-    def bulk_index(self, folder):
+    
+    def bulk_index(self, folder, force_rescan=False):
+        """
+        Index all images in folder with incremental support.
+        
+        Args:
+            folder: Path to image directory
+            force_rescan: If True, rebuild index from scratch
+        """
         if not os.path.exists(folder):
+            print(f"❌ Folder not found: {folder}")
             return
-
-        print(f"Scanning {folder}")
-        image_files = list(walk_image_files(folder))
         
-        if not image_files:
-            return
-
-        self._reset_index()
+        files = list(walk_image_files(folder))
+        print(f"📁 Found {len(files)} images")
         
-        print(f"Processing {len(image_files)} images")
-        files_to_embed = self._phase1_phash_filtering(image_files)
-        self._phase2_embedding(files_to_embed)
-
-    def _reset_index(self):
-        self.index = faiss.IndexFlatIP(self.dimension)
-        self.stored_files = []
-        self.phash_map = {}
-        self.fast_duplicates = []
-
-    def _phase1_phash_filtering(self, image_files):
-        files_to_embed = []
-        phash_count = 0
+        if not force_rescan and config.ENABLE_INCREMENTAL_INDEXING:
+            # Incremental mode: only process new/changed files
+            files_to_process = []
+            for f in files:
+                checksum = self._compute_file_checksum(f)
+                if checksum and (f not in self.file_checksums or self.file_checksums[f] != checksum):
+                    files_to_process.append(f)
+                    self.file_checksums[f] = checksum
+            
+            if files_to_process:
+                print(f"⚡ Incremental update: {len(files_to_process)} new/modified files")
+                files = files_to_process
+            else:
+                print("✓ No changes detected - index is up to date")
+                return
+        else:
+            # Full rescan
+            self.stored_files = []
+            self.hash_buckets = defaultdict(list)
+            self.fast_duplicates = []
+            self.index = faiss.IndexFlatIP(self.dimension)
+            self.file_checksums = {}
+            
+            for f in files:
+                checksum = self._compute_file_checksum(f)
+                if checksum:
+                    self.file_checksums[f] = checksum
         
-        print("Phase 1: pHash Fast-Pass")
-        for f in tqdm(image_files):
-            h = self._compute_phash(f)
-            if h is None:
+        # Phase 1: Hash-based deduplication
+        print(f"⚡ Phase 1: Hashing {len(files)} images...")
+        files_for_dino = []
+        
+        for f in tqdm(files, desc="Hashing"):
+            h = self._compute_hash(f)
+            if not h:
                 continue
             
-            if h in self.phash_map:
-                original_file = self.phash_map[h]
-                self.fast_duplicates.append({
-                    "file1": original_file,
-                    "file2": f,
-                    "score": 1.0,
-                    "method": "pHash"
-                })
-                phash_count += 1
-            else:
-                self.phash_map[h] = f
-                files_to_embed.append(f)
+            # Check for hash collisions
+            bucket = h[:4]
+            found = False
+            
+            for exist_h, exist_f in self.hash_buckets[bucket]:
+                dist = imagehash.hex_to_hash(h) - imagehash.hex_to_hash(exist_h)
+                if dist <= config.HASH_THRESHOLD:
+                    self.fast_duplicates.append({
+                        "file1": exist_f,
+                        "file2": f,
+                        "score": 0.99,
+                        "method": "dHash"
+                    })
+                    found = True
+                    break
+            
+            if not found:
+                self.hash_buckets[bucket].append((h, f))
+                files_for_dino.append(f)
         
-        print(f"pHash found {phash_count} exact duplicates")
-        return files_to_embed
-
-    def _phase2_embedding(self, files_to_embed):
-        print(f"Phase 2: Embedding {len(files_to_embed)} unique images")
+        # Phase 2: DINOv2 embedding
+        if files_for_dino:
+            print(f"🧠 Phase 2: DINOv2 Embedding ({len(files_for_dino)} unique images)...")
+            batch_vecs = []
+            batch_files = []
+            
+            for f in tqdm(files_for_dino, desc="Embedding"):
+                vec = self._generate_embedding(f)
+                if vec is not None:
+                    batch_vecs.append(vec)
+                    batch_files.append(f)
+                    
+                    # Process in batches
+                    if len(batch_vecs) >= config.BATCH_SIZE:
+                        self.index.add(np.vstack(batch_vecs))
+                        self.stored_files.extend(batch_files)
+                        batch_vecs = []
+                        batch_files = []
+            
+            # Add remaining
+            if batch_vecs:
+                self.index.add(np.vstack(batch_vecs))
+                self.stored_files.extend(batch_files)
         
-        batch_embeddings = []
-        batch_files = []
+        print(f"✅ Indexed {self.index.ntotal} images ({len(self.fast_duplicates)} hash matches)")
         
-        for f in tqdm(files_to_embed):
-            emb = self._generate_standard_embedding(f)
-            if emb is not None:
-                batch_embeddings.append(emb)
-                batch_files.append(f)
-                
-                if len(batch_embeddings) >= config.BATCH_SIZE:
-                    self._add_batch_to_index(batch_embeddings, batch_files)
-                    batch_embeddings = []
-                    batch_files = []
+        # Save index
+        if config.ENABLE_INCREMENTAL_INDEXING:
+            self._save_index()
+    
+    def calibrate_threshold(self, dataset_path):
+        """
+        Auto-calibrate optimal similarity threshold using ground truth.
         
-        if batch_embeddings:
-            self._add_batch_to_index(batch_embeddings, batch_files)
-
-    def _add_batch_to_index(self, embeddings, files):
-        self.index.add(np.vstack(embeddings))
-        self.stored_files.extend(files)
-
-    def find_duplicates(self, threshold=None):
-        threshold = threshold or config.SIMILARITY_THRESHOLD
+        Returns:
+            (optimal_threshold, best_f1_score, calibration_history)
+        """
+        print("⚖️ Calibrating optimal threshold...")
         
-        all_duplicates = self.fast_duplicates.copy()
-        visited = self._create_visited_set(all_duplicates)
-
+        gt_pairs = auto_generate_ground_truth(dataset_path)
+        history = []
+        
+        if not gt_pairs:
+            print("⚠️ No ground truth pairs found")
+            return config.DEFAULT_THRESHOLD, 0.0, []
+        
+        print(f"📊 Found {len(gt_pairs)} ground truth pairs")
+        
+        best_f1 = -1
+        best_thresh = config.DEFAULT_THRESHOLD
+        
+        # Get all candidates once at lowest threshold
+        min_thresh = min(config.CALIBRATION_THRESHOLDS)
+        base_duplicates = self._find_duplicates_internal(threshold=min_thresh, silent=True)
+        
+        for thresh in config.CALIBRATION_THRESHOLDS:
+            # Filter by current threshold
+            filtered = [d for d in base_duplicates if d['score'] >= thresh]
+            
+            # Calculate metrics
+            det_set = set(normalize_pair((d['file1'], d['file2'])) for d in filtered)
+            gt_set = set(normalize_pair(p) for p in gt_pairs)
+            
+            tp = len(det_set.intersection(gt_set))
+            fp = len(det_set - gt_set)
+            fn = len(gt_set - det_set)
+            
+            prec = tp / (tp + fp + config.EPSILON)
+            rec = tp / (tp + fn + config.EPSILON)
+            f1 = 2 * (prec * rec) / (prec + rec + config.EPSILON)
+            
+            history.append({
+                "threshold": thresh,
+                "f1": f1,
+                "precision": prec,
+                "recall": rec,
+                "count": len(filtered)
+            })
+            
+            if f1 >= best_f1:
+                best_f1 = f1
+                best_thresh = thresh
+        
+        print(f"✅ Optimal Threshold: {best_thresh:.2f} (F1: {best_f1:.4f})")
+        self.optimal_threshold = best_thresh
+        
+        return best_thresh, best_f1, history
+    
+    def _find_duplicates_internal(self, threshold, silent=False):
+        """Internal method to find duplicates at given threshold"""
+        duplicates = list(self.fast_duplicates)
+        
         if self.index.ntotal < 2:
-            return all_duplicates
-
-        new_duplicates = self._find_embedding_duplicates(threshold, visited)
+            return duplicates
         
-        # Apply sharpness penalty to DINOv2 matches
-        for dup in new_duplicates:
-            if dup['method'] == 'DINOv2':
-                sharpness1 = self._calculate_sharpness(dup['file1'])
-                sharpness2 = self._calculate_sharpness(dup['file2'])
+        chunk_size = 1000
+        k = 20  # Higher k to capture loose matches
+        seen_pairs = set()
+        
+        total_chunks = (self.index.ntotal + chunk_size - 1) // chunk_size
+        
+        iterator = range(0, self.index.ntotal, chunk_size)
+        if not silent:
+            iterator = tqdm(iterator, desc="Finding duplicates", total=total_chunks)
+        
+        for start in iterator:
+            end = min(start + chunk_size, self.index.ntotal)
+            vecs = self.index.reconstruct_n(start, end - start)
+            D, I = self.index.search(vecs, k)
+            
+            for i in range(len(vecs)):
+                abs_i = start + i
                 
-                # Penalize if one image is much more pixelated than the other
-                if sharpness1 > 0 and sharpness2 > 0:
-                    sharpness_ratio = min(sharpness1, sharpness2) / max(sharpness1, sharpness2)
+                for j in range(1, k):
+                    score = float(D[i][j])
+                    idx_n = int(I[i][j])
                     
-                    # If sharpness difference is large, reduce similarity score
-                    if sharpness_ratio < 0.3:
-                        dup['score'] *= 0.85
-                        dup['sharpness_adjusted'] = True
-        
-        all_duplicates.extend(new_duplicates)
-        return all_duplicates
-
-    def _create_visited_set(self, duplicates):
-        visited = set()
-        for d in duplicates:
-            pair = tuple(sorted((d['file1'], d['file2'])))
-            visited.add(pair)
-        return visited
-
-    def _find_embedding_duplicates(self, threshold, visited):
-        k = min(config.MAX_SEARCH_RESULTS, self.index.ntotal)
-        
-        # Process in chunks for better memory handling
-        chunk_size = 5000
-        new_duplicates = []
-        
-        for start_idx in range(0, self.index.ntotal, chunk_size):
-            end_idx = min(start_idx + chunk_size, self.index.ntotal)
-            chunk_vectors = self.index.reconstruct_n(start_idx, end_idx - start_idx)
-            D, I = self.index.search(chunk_vectors, k)
-
-            for i in range(len(I)):
-                idx1 = start_idx + i
-                for j in range(1, len(I[i])):
-                    score = D[i][j]
+                    if idx_n == -1 or abs_i == idx_n:
+                        continue
                     
-                    # Early stopping
-                    if score < threshold:
-                        break
-                    
-                    idx2 = I[i][j]
-                    if idx2 != -1 and idx2 < len(self.stored_files):
-                        pair = tuple(sorted((self.stored_files[idx1], self.stored_files[idx2])))
-                        if pair not in visited:
-                            new_duplicates.append({
-                                "file1": pair[0],
-                                "file2": pair[1],
-                                "score": float(score),
+                    if score >= threshold:
+                        f1 = self.stored_files[abs_i]
+                        f2 = self.stored_files[idx_n]
+                        
+                        if f1 == f2:
+                            continue
+                        
+                        pair = tuple(sorted((f1, f2)))
+                        if pair not in seen_pairs:
+                            duplicates.append({
+                                "file1": f1,
+                                "file2": f2,
+                                "score": score,
                                 "method": "DINOv2"
                             })
-                            visited.add(pair)
+                            seen_pairs.add(pair)
         
-        return new_duplicates
-
-    def find_matches_for_file(self, query_image_path, threshold=None):
-        threshold = threshold or config.SIMILARITY_THRESHOLD
-        query_emb = self._generate_robust_embedding(query_image_path)
+        return duplicates
+    
+    def find_duplicates(self, threshold=None):
+        """
+        Find all duplicate pairs at given threshold.
         
-        if query_emb is None:
+        Args:
+            threshold: Similarity threshold (uses optimal if None)
+        
+        Returns:
+            List of duplicate pairs with scores
+        """
+        t = threshold if threshold is not None else self.optimal_threshold
+        return self._find_duplicates_internal(t)
+    
+    def find_matches_for_file(self, file_path, threshold=None, top_k=10):
+        """
+        Find similar images for a query file.
+        
+        Args:
+            file_path: Path to query image
+            threshold: Minimum similarity score
+            top_k: Maximum number of results
+        
+        Returns:
+            List of matching images with scores
+        """
+        threshold = threshold or self.optimal_threshold
+        
+        vec = self._generate_embedding(file_path)
+        if vec is None:
             return []
         
-        query_emb = query_emb.reshape(1, -1)
-        k = min(config.MAX_SEARCH_RESULTS, self.index.ntotal)
-        D, I = self.index.search(query_emb, k)
+        D, I = self.index.search(vec, top_k)
         
-        matches = []
+        results = []
         for score, idx in zip(D[0], I[0]):
-            if idx != -1 and score > threshold:
-                matches.append({
+            if idx != -1 and score >= threshold:
+                results.append({
                     "path": self.stored_files[idx],
                     "score": float(score),
                     "method": "DINOv2"
                 })
-            else:
-                break
         
-        return matches
+        return results
+    
+    def _save_index(self):
+        """Save FAISS index and metadata to disk"""
+        try:
+            os.makedirs(config.INDEX_SAVE_PATH, exist_ok=True)
+            
+            # Save FAISS index
+            index_path = os.path.join(config.INDEX_SAVE_PATH, "faiss.index")
+            faiss.write_index(self.index, index_path)
+            
+            # Save metadata
+            metadata = {
+                'stored_files': self.stored_files,
+                'hash_buckets': dict(self.hash_buckets),
+                'fast_duplicates': self.fast_duplicates,
+                'optimal_threshold': self.optimal_threshold,
+                'file_checksums': self.file_checksums
+            }
+            
+            metadata_path = os.path.join(config.INDEX_SAVE_PATH, "metadata.pkl")
+            with open(metadata_path, 'wb') as f:
+                pickle.dump(metadata, f)
+            
+            print(f"💾 Index saved to {config.INDEX_SAVE_PATH}")
+        except Exception as e:
+            print(f"⚠️ Failed to save index: {str(e)}")
+    
+    def _load_index(self):
+        """Load existing FAISS index and metadata from disk"""
+        try:
+            index_path = os.path.join(config.INDEX_SAVE_PATH, "faiss.index")
+            metadata_path = os.path.join(config.INDEX_SAVE_PATH, "metadata.pkl")
+            
+            if not (os.path.exists(index_path) and os.path.exists(metadata_path)):
+                return False
+            
+            # Load FAISS index
+            self.index = faiss.read_index(index_path)
+            
+            # Load metadata
+            with open(metadata_path, 'rb') as f:
+                metadata = pickle.load(f)
+            
+            self.stored_files = metadata.get('stored_files', [])
+            self.hash_buckets = defaultdict(list, metadata.get('hash_buckets', {}))
+            self.fast_duplicates = metadata.get('fast_duplicates', [])
+            self.optimal_threshold = metadata.get('optimal_threshold', config.DEFAULT_THRESHOLD)
+            self.file_checksums = metadata.get('file_checksums', {})
+            
+            print(f"✅ Loaded existing index: {len(self.stored_files)} images")
+            return True
+        except Exception as e:
+            print(f"⚠️ Could not load index: {str(e)}")
+            return False
+    
+    def get_stats(self):
+        """Return detector statistics"""
+        return {
+            'total_indexed': self.index.ntotal,
+            'hash_matches': len(self.fast_duplicates),
+            'total_files': len(self.stored_files),
+            'optimal_threshold': self.optimal_threshold
+        }

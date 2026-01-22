@@ -7,3 +7,4 @@ dataset_copydays/
 req.txt
 temp_query.jpg
 generate_crop.py
+diagnose.py
