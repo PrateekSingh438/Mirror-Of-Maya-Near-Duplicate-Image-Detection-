@@ -11,3 +11,6 @@ generate_crop.py
 node_modules
 frontend2
 .vscode/
+diagnose.py
+indexes/
+session_state.json
