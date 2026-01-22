@@ -8,3 +8,5 @@ req.txt
 temp_query.jpg
 generate_crop.py
 diagnose.py
+indexes/
+session_state.json
