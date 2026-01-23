@@ -4,81 +4,213 @@ from collections import defaultdict
 import config
 
 def walk_image_files(folder):
-    """Generator that yields all image file paths in folder recursively"""
     for root, _, files in os.walk(folder):
         for f in files:
             if f.lower().endswith(config.SUPPORTED_EXTENSIONS):
                 yield os.path.join(root, f)
 
 def normalize_pair(pair):
-    """Normalize file pair to ID tuple for comparison"""
+    """
+    For datasets where same basename = same image (like COPYDAYS).
+    This is your current approach - keeps it for reference.
+    """
     n1 = os.path.splitext(os.path.basename(pair[0]))[0]
     n2 = os.path.splitext(os.path.basename(pair[1]))[0]
     return tuple(sorted((n1, n2)))
-
 def is_original_file(filepath):
-    """Check if file is in the original folder"""
-    return config.ORIGINAL_DIR_NAME.lower() in filepath.lower()
+    normalized_path = filepath.replace('\\', '/')
+    path_parts = normalized_path.lower().split('/')
+    return 'original' in path_parts
 
-def auto_generate_ground_truth(folder):
-    """
-    Generate ground truth pairs by grouping files with same basename.
-    Works for datasets where originals and duplicates share filenames.
-    """
-    files = list(walk_image_files(folder))
-    base_map = defaultdict(list)
+def get_basename_without_ext(filepath):
+    """Extract basename without extension"""
+    return os.path.splitext(os.path.basename(filepath))[0]
+
+def generate_proper_ground_truth(dataset_path):
+    """Generate ground truth pairs: original → attack only"""
+    files = list(walk_image_files(dataset_path))
+    
+    originals = {}
+    attacks = defaultdict(list)
+    
+    print(f"\n🔍 Analyzing {len(files)} files...")
+    
+    original_count = 0
+    attack_count = 0
     
     for f in files:
-        name = os.path.splitext(os.path.basename(f))[0]
-        base_map[name].append(f)
+        basename = get_basename_without_ext(f)
+        
+        if is_original_file(f):
+            originals[basename] = f
+            original_count += 1
+            if original_count <= 3:
+                print(f"   ✓ Original: {f}")
+        else:
+            attacks[basename].append(f)
+            attack_count += 1
+    
+    print(f"\n   Total originals: {original_count}")
+    print(f"   Total attacks: {attack_count}")
     
     pairs = []
-    for base, group in base_map.items():
-        if len(group) > 1:
-            # Create all pairwise combinations
-            for i in range(len(group)):
-                for j in range(i+1, len(group)):
-                    pairs.append((group[i], group[j]))
+    for basename, original_path in originals.items():
+        if basename in attacks:
+            for attack_path in attacks[basename]:
+                pairs.append((original_path, attack_path))
+    
+    print(f"\n📊 Ground Truth Stats:")
+    print(f"   Originals: {len(originals)}")
+    print(f"   Unique basenames with attacks: {len([b for b in originals if b in attacks])}")
+    print(f"   Total attacks: {sum(len(v) for v in attacks.values())}")
+    print(f"   Valid pairs (original→attack): {len(pairs)}")
+    
+    if len(pairs) > 0:
+        print(f"\n✓ Sample pairs:")
+        for i, (orig, attack) in enumerate(pairs[:5]):
+            print(f"   {i+1}. {os.path.basename(orig)} → {attack.replace(dataset_path, '...').replace(os.sep, '/')}")
     
     return pairs
 
-def organize_clusters(duplicates):
+def organize_clusters(duplicates, mode="basename"):
     """
-    Organize duplicates into clusters using graph-based approach.
-    Each cluster has one original and multiple duplicates.
-    FIXED: Now properly ensures originals are not compared to other duplicates.
+    Organize duplicates into clusters with two modes:
+    
+    mode="basename": Only cluster images with same basename (conservative, like query tab)
+    mode="semantic": Cluster all semantically similar images (may include unrelated)
     """
     if not duplicates:
         return []
     
-    # Build graph
-    G = nx.Graph()
-    for d in duplicates:
-        G.add_edge(d['file1'], d['file2'], weight=d['score'])
+    print(f"\n🔧 Organizing {len(duplicates)} duplicate pairs (mode: {mode})...")
+    
+    if mode == "basename":
+        return _organize_clusters_basename_filtered(duplicates)
+    else:
+        return _organize_clusters_semantic(duplicates)
+
+def _organize_clusters_basename_filtered(duplicates):
+    """
+    CONSERVATIVE MODE: Only cluster images that share the same basename
+    
+    This mimics the query tab behavior - only shows duplicates that are
+    actually variations of the same original image.
+    
+    Example:
+    - 200000.jpg (original)
+    - 200000.jpg (jpeg/75/200000.jpg) ✓ Same basename - included
+    - 200100.jpg (jpeg/75/200100.jpg) ✗ Different basename - separate cluster
+    """
+    
+    # Group duplicates by basename
+    basename_groups = defaultdict(lambda: {'files': set(), 'pairs': []})
+    
+    for dup in duplicates:
+        file1 = dup['file1']
+        file2 = dup['file2']
+        
+        basename1 = get_basename_without_ext(file1)
+        basename2 = get_basename_without_ext(file2)
+        
+        # CRITICAL: Only process pairs with SAME basename
+        if basename1 == basename2:
+            basename_groups[basename1]['files'].add(file1)
+            basename_groups[basename1]['files'].add(file2)
+            basename_groups[basename1]['pairs'].append(dup)
+    
+    print(f"   Found {len(basename_groups)} unique basenames")
     
     clusters = []
     
-    for component in nx.connected_components(G):
-        if len(component) < 2:
+    for basename, data in basename_groups.items():
+        files = list(data['files'])
+        
+        if len(files) < 2:
             continue
         
-        subgraph = G.subgraph(component)
-        candidates = list(component)
+        # Build subgraph for this basename only
+        G = nx.Graph()
+        for dup in data['pairs']:
+            G.add_edge(dup['file1'], dup['file2'], weight=dup['score'])
         
-        # Identify original using multiple heuristics
-        original = select_original(candidates, subgraph)
+        # Select original
+        original = select_original(files, G)
         
-        # Build duplicate list with scores - ONLY include files that are NOT the original
+        # Get duplicates
         dups_list = []
-        for node in component:
+        for node in files:
             if node == original:
                 continue
             
-            # Get score relative to original
+            if G.has_edge(original, node):
+                score = G[original][node]['weight']
+            else:
+                try:
+                    path = nx.shortest_path(G, original, node)
+                    scores = []
+                    for i in range(len(path)-1):
+                        u, v = path[i], path[i+1]
+                        scores.append(G[u][v]['weight'])
+                    score = sum(scores) / len(scores)
+                except:
+                    continue
+            
+            dups_list.append({
+                'path': node,
+                'score': float(score)
+            })
+        
+        if dups_list:
+            dups_list.sort(key=lambda x: x['score'], reverse=True)
+            clusters.append({
+                'original': original,
+                'duplicates': dups_list
+            })
+    
+    clusters.sort(key=lambda x: len(x['duplicates']), reverse=True)
+    
+    print(f"✅ Created {len(clusters)} clusters (basename-filtered)")
+    
+    return clusters
+
+def _organize_clusters_semantic(duplicates):
+    """
+    SEMANTIC MODE: Cluster all similar images regardless of basename
+    
+    This can group unrelated images if they happen to be similar.
+    Use with caution at low thresholds.
+    """
+    
+    G = nx.Graph()
+    
+    for d in duplicates:
+        G.add_edge(d['file1'], d['file2'], weight=d['score'])
+    
+    print(f"   Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+    
+    clusters = []
+    
+    components = list(nx.connected_components(G))
+    print(f"   Found {len(components)} connected components")
+    
+    for component in components:
+        if len(component) < 2:
+            continue
+        
+        component_list = list(component)
+        subgraph = G.subgraph(component)
+        
+        original = select_original(component_list, subgraph)
+        
+        dups_list = []
+        
+        for node in component_list:
+            if node == original:
+                continue
+            
             if subgraph.has_edge(original, node):
                 score = subgraph[original][node]['weight']
             else:
-                # Calculate average score along shortest path
                 try:
                     path = nx.shortest_path(subgraph, original, node)
                     scores = []
@@ -87,38 +219,32 @@ def organize_clusters(duplicates):
                         scores.append(subgraph[u][v]['weight'])
                     score = sum(scores) / len(scores)
                 except:
-                    score = 0.01
+                    continue
             
             dups_list.append({
                 'path': node,
                 'score': float(score)
             })
         
-        # Sort by score descending
-        dups_list.sort(key=lambda x: x['score'], reverse=True)
-        
-        clusters.append({
-            'original': original,
-            'duplicates': dups_list
-        })
+        if dups_list:
+            dups_list.sort(key=lambda x: x['score'], reverse=True)
+            clusters.append({
+                'original': original,
+                'duplicates': dups_list
+            })
     
-    # Sort clusters by number of duplicates
     clusters.sort(key=lambda x: len(x['duplicates']), reverse=True)
+    
+    print(f"✅ Created {len(clusters)} clusters (semantic)")
+    
     return clusters
 
 def select_original(candidates, subgraph):
-    """
-    Select the most likely original file using heuristics:
-    1. Prefers files in 'original' folder
-    2. Prefers files with higher average connectivity
-    3. Prefers shorter filenames (less likely to have suffixes)
-    """
-    # Check for files in original folder
+    """Select the best 'original' from a cluster"""
     for candidate in candidates:
         if is_original_file(candidate):
             return candidate
     
-    # Calculate average edge weight for each candidate
     scores = {}
     for candidate in candidates:
         neighbors = list(subgraph.neighbors(candidate))
@@ -127,24 +253,11 @@ def select_original(candidates, subgraph):
             scores[candidate] = avg_weight
     
     if scores:
-        # Return candidate with highest average similarity
         return max(scores.items(), key=lambda x: x[1])[0]
     
-    # Fallback: shortest filename
     return min(candidates, key=lambda x: len(os.path.basename(x)))
 
-def count_total_duplicates(clusters):
-    """
-    Count total number of duplicate files (not pairs).
-    This gives the actual count of files that are duplicates.
-    """
-    total = 0
-    for cluster in clusters:
-        total += len(cluster['duplicates'])
-    return total
-
 def get_dir_size(path):
-    """Calculate total size of all images in directory (in MB)"""
     total = 0
     try:
         for f in walk_image_files(path):
@@ -154,15 +267,10 @@ def get_dir_size(path):
     return total / (1024 * 1024)
 
 def calculate_wasted_space(duplicates):
-    """
-    Calculate total wasted space from duplicates (in MB).
-    Only counts each duplicate file once.
-    """
     seen = set()
     total = 0
     
     for d in duplicates:
-        # Count file2 as the duplicate
         if d['file2'] not in seen:
             try:
                 total += os.path.getsize(d['file2'])
@@ -173,7 +281,6 @@ def calculate_wasted_space(duplicates):
     return total / (1024 * 1024)
 
 def format_file_size(bytes_size):
-    """Format bytes into human-readable size"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if bytes_size < 1024.0:
             return f"{bytes_size:.2f} {unit}"
@@ -181,76 +288,4 @@ def format_file_size(bytes_size):
     return f"{bytes_size:.2f} PB"
 
 def get_image_files(folder):
-    """Get list of all image files in folder"""
     return list(walk_image_files(folder))
-
-def calculate_image_quality(image_path):
-    """
-    Calculate quality score for an image based on multiple metrics.
-    Returns score from 0-100.
-    """
-    try:
-        from PIL import Image
-        import numpy as np
-        from scipy import ndimage
-        
-        img = Image.open(image_path)
-        img_array = np.array(img.convert('L'))  # Convert to grayscale
-        
-        # 1. Sharpness (Laplacian variance)
-        laplacian = ndimage.laplace(img_array)
-        sharpness = laplacian.var()
-        
-        # 2. Entropy (information content)
-        histogram, _ = np.histogram(img_array, bins=256, range=(0, 256))
-        histogram = histogram / histogram.sum()
-        entropy = -np.sum(histogram * np.log2(histogram + 1e-10))
-        
-        # 3. Resolution score
-        width, height = img.size
-        megapixels = (width * height) / 1_000_000
-        resolution_score = min(megapixels / 10, 1.0)  # Normalize to 0-1
-        
-        # 4. JPEG blockiness detection (simple version)
-        blockiness = detect_blockiness(img_array)
-        
-        # Combine scores
-        quality = (
-            (min(sharpness / 100, 1.0) * config.SHARPNESS_WEIGHT) +
-            (entropy / 8.0 * config.ENTROPY_WEIGHT) +
-            (resolution_score * config.RESOLUTION_WEIGHT) -
-            (blockiness * config.BLOCKINESS_PENALTY)
-        ) * 100
-        
-        return max(0, min(100, quality))
-    except:
-        return 50  # Default score if calculation fails
-
-def detect_blockiness(img_array):
-    """Detect JPEG compression artifacts (8x8 blocking)"""
-    try:
-        # Calculate differences at 8-pixel intervals
-        diff_h = np.abs(np.diff(img_array[:, ::8], axis=1))
-        diff_v = np.abs(np.diff(img_array[::8, :], axis=0))
-        
-        blockiness = (diff_h.mean() + diff_v.mean()) / 2
-        return min(blockiness / 50, 1.0)  # Normalize
-    except:
-        return 0
-
-def create_original_duplicate_pairs(clusters):
-    """
-    Create a list of (original, duplicate) pairs from clusters.
-    This ensures File 1 is always an original, File 2 is always a duplicate.
-    """
-    pairs = []
-    for cluster in clusters:
-        original = cluster['original']
-        for dup in cluster['duplicates']:
-            pairs.append({
-                'file1': original,
-                'file2': dup['path'],
-                'score': dup['score'],
-                'method': 'Clustered'
-            })
-    return pairs
