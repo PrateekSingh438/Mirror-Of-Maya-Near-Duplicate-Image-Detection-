@@ -6,8 +6,7 @@ from engine import DuplicateDetector
 from utils import get_dir_size
 from session_manager import save_session_state, recalculate_metrics
 
-if 'clustering_mode' not in st.session_state:
-    st.session_state.clustering_mode = 'basename'
+
 
 def apply_custom_css():
     st.markdown("""
@@ -57,7 +56,7 @@ def apply_custom_css():
         }
         
         [data-testid="stSidebar"]::before {
-            content: "🔱";
+            content: "☸️";
             position: absolute;
             top: 1rem;
             left: 50%;
@@ -253,42 +252,17 @@ def apply_custom_css():
 def render_header():
     st.markdown('''
     <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 class="main-header">SUDARSHANA</h1>
-        <p class="subtitle">The Chakra of Digital Discernment</p>
+        <h1 class="main-header">MIRROR OF MAYA</h1>
+        <p class="subtitle">Where Illusions Reveal Truth</p>
         <div style="color: #64748b; font-style: italic; font-size: 0.9rem; max-width: 800px; margin: 0 auto; line-height: 1.6;">
             Just as Maya weaves illusions where one truth manifests in countless forms, 
             the digital realm births infinite avatars from single souls. 
-            The Sudarshana Chakra pierces this veil, revealing the original essence beneath layers of transformation.
+            The Mirror of Maya pierces this veil, revealing the original essence beneath layers of transformation.
         </div>
     </div>
     ''', unsafe_allow_html=True)
 
-def render_clustering_mode_selector():
-    with st.expander("Avatar Detection Mode", expanded=True):
-        st.markdown("""
-        <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem;'>
-            Choose how the Chakra groups similar souls
-        </div>
-        """, unsafe_allow_html=True)
-        
-        mode = st.radio(
-            "Grouping strategy:",
-            options=["basename", "semantic"],
-            format_func=lambda x: {
-                "basename": "🎯 Name-Bound (Conservative)",
-                "semantic": "🧠 Soul-Bound (Aggressive)"
-            }[x],
-            index=0 if st.session_state.get('clustering_mode', 'basename') == 'basename' else 1
-        )
 
-        if mode != st.session_state.get('clustering_mode', 'basename'):
-            st.session_state.clustering_mode = mode
-            st.rerun()
-
-        if mode == "basename":
-            st.info("Only groups avatars sharing the same name essence")
-        else:
-            st.warning("Groups all visually resonant souls (may include distant cousins)")
 
 def render_sidebar():
     with st.sidebar:
@@ -297,7 +271,6 @@ def render_sidebar():
         
         _render_model_selection()
         _render_dataset_config()
-        render_clustering_mode_selector()
         
         st.markdown("---")
         st.markdown("### ⚡ SACRED ACTIONS")
