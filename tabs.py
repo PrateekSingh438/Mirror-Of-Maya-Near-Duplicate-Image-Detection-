@@ -86,7 +86,7 @@ def dashboard_tab():
         df_cal = pd.DataFrame(st.session_state.calibration_history)
         
         # Create tabs for different visualizations
-        viz_tabs = st.tabs(["🎯 Calibration Curves", "🌊 Score Distribution", "⚡ Detection Insights"])
+        viz_tabs = st.tabs(["Calibration Curves", "Score Distribution", "Detection Insights"])
         
         with viz_tabs[0]:
             _render_calibration_curves(df_cal)
@@ -161,7 +161,7 @@ def _render_calibration_curves(df_cal):
         st.plotly_chart(fig, width='stretch')
     
     with col_table:
-        st.markdown("**📈 Performance Metrics**")
+        st.markdown("**Performance Metrics**")
         st.dataframe(
             df_cal[["threshold", "f1"]]
             .style.highlight_max(axis=0, subset=["f1"])

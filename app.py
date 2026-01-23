@@ -50,7 +50,7 @@ if st.session_state.detector:
 st.markdown("---")
 
 # Tabs
-tabs = st.tabs(["📊 Dashboard", "🗂️ Manager", "🔎 Search", "📈 Analytics", "⚡ Hash Duplicates", "⚔️ Versus"])
+tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics", "Hash Duplicates", "Versus"])
 
 with tabs[0]:
     dashboard_tab()
