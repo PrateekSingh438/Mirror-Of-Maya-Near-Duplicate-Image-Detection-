@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore')
 
 class DuplicateDetector:
     def __init__(self):
-        print(f"🚀 Initializing on {config.DEVICE}")
+        print(f"Initializing on {config.DEVICE}")
         self.device = config.DEVICE
         
         self.processor = AutoImageProcessor.from_pretrained(config.MODEL_ID)
@@ -57,7 +57,7 @@ class DuplicateDetector:
         
         from utils import walk_image_files
         files = list(walk_image_files(folder))
-        print(f"📂 Found {len(files)} images")
+        print(f" Found {len(files)} images")
         
         # Phase 1: Hash-based fast detection
         print(f"⚡ Phase 1: Hashing...")
@@ -89,7 +89,7 @@ class DuplicateDetector:
         
         # Phase 2: Embedding-based detection
         if files_for_dino:
-            print(f"🧠 Phase 2: Embedding ({len(files_for_dino)} unique)...")
+            print(f" Phase 2: Embedding ({len(files_for_dino)} unique)...")
             batch_vecs = []
             batch_files = []
             
@@ -113,17 +113,17 @@ class DuplicateDetector:
 
     def calibrate_threshold(self, dataset_path):
         """Calibrate threshold using full path comparison"""
-        print("⚖️ Calibrating threshold...")
+        print(" Calibrating threshold...")
         
         from utils import generate_ground_truth, normalize_pair_fullpath
         
         gt_pairs = generate_ground_truth(dataset_path)
         
         if not gt_pairs:
-            print("⚠️ No ground truth")
+            print(" No ground truth")
             return config.DEFAULT_THRESHOLD, 0.0, [], []
         
-        print(f"📊 Ground truth: {len(gt_pairs)} pairs")
+        print(f" Ground truth: {len(gt_pairs)} pairs")
         
         best_f1 = -1
         best_thresh = config.DEFAULT_THRESHOLD
@@ -133,7 +133,7 @@ class DuplicateDetector:
         min_thresh = min(config.CALIBRATION_THRESHOLDS)
         all_duplicates = self._find_duplicates_internal(threshold=min_thresh, silent=True)
         
-        print(f"\n🔍 Found {len(all_duplicates)} pairs at threshold {min_thresh}")
+        print(f"\n Found {len(all_duplicates)} pairs at threshold {min_thresh}")
         
         # Normalize ground truth using FULL PATHS
         gt_set = set(normalize_pair_fullpath(p) for p in gt_pairs)
@@ -172,7 +172,7 @@ class DuplicateDetector:
                 best_f1 = f1
                 best_thresh = thresh
         
-        print(f"\n✅ Optimal: {best_thresh:.2f} (F1: {best_f1:.4f})")
+        print(f"\n Optimal: {best_thresh:.2f} (F1: {best_f1:.4f})")
         self.optimal_threshold = best_thresh
         
         return best_thresh, best_f1, history, gt_pairs
@@ -258,10 +258,10 @@ class DuplicateDetector:
         if vec1 is None or vec2 is None:
             return None
         
-        # Compute cosine similarity
+        #Cosine similarity
         similarity = float(np.dot(vec1[0], vec2[0]))
         
-        # Also compute hash similarity
+        #Hash similarity
         h1 = self._compute_hash(img1_path)
         h2 = self._compute_hash(img2_path)
         

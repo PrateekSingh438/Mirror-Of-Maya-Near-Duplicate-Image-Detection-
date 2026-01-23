@@ -8,10 +8,6 @@ from utils import extract_embeddings
 from engine import FeatureExtractor, SearchEngine
 
 def run_evaluation_search(model_name, distance_metric, base_path=config.BASE_PATH):
-    """
-    Loads data, extracts features, runs the search, and returns raw results.
-    Does NOT calculate final metrics based on a specific threshold.
-    """
     # 1. Load Data
     image_paths = get_image_paths(base_path)
     if not image_paths:
@@ -46,12 +42,7 @@ def run_evaluation_search(model_name, distance_metric, base_path=config.BASE_PAT
     return raw_matches, ground_truth_mapping, embeddings, image_ids
 
 def calculate_metrics_at_threshold(matches_at_threshold, ground_truth_mapping):
-    """
-    Calculates Precision, Recall, and F1 for a given set of matches that
-    have already been filtered by a threshold.
-    """
-    # Find true positives based on ground truth
-    # A match is a true positive if it's in the ground truth set for the query
+
     true_positive_matches = [
         (q_id, r_id, score)
         for q_id, r_id, score in matches_at_threshold
@@ -61,7 +52,6 @@ def calculate_metrics_at_threshold(matches_at_threshold, ground_truth_mapping):
     true_positives = len(true_positive_matches)
     total_matches = len(matches_at_threshold)
     
-    # Calculate total relevant pairs in ground truth (for recall denominator)
     total_relevant = sum(len(s) for s in ground_truth_mapping.values())
 
     if total_matches == 0:
@@ -82,46 +72,33 @@ def calculate_metrics_at_threshold(matches_at_threshold, ground_truth_mapping):
     return precision, recall, f1, true_positive_matches
 
 def filter_matches_by_threshold(raw_matches, distance_metric, threshold):
-    """
-    Filters the raw search results based on the given threshold and metric type.
-    """
     filtered_matches = []
     similarity_metrics = ["cosine", "dot_product"]
 
     for q_id, r_id, score in raw_matches:
         if distance_metric in similarity_metrics:
-            # For similarity, score must be >= threshold
             if score >= threshold:
                 filtered_matches.append((q_id, r_id, score))
         else:
-            # For distance, score must be <= threshold
             if score <= threshold:
                 filtered_matches.append((q_id, r_id, score))
                 
     return filtered_matches
 
 def plot_pr_curve(raw_matches, ground_truth_mapping, distance_metric):
-    """
-    Plots the Precision-Recall curve based on the raw top-K matches.
-    """
     y_true = []
     y_scores = []
 
     similarity_metrics = ["cosine", "dot_product"]
     is_similarity = distance_metric in similarity_metrics
 
-    # Prepare data for sklearn's precision_recall_curve
     for q_id, r_id, score in raw_matches:
-        # Determine if this match is a true positive according to ground truth
         is_relevant = (q_id in ground_truth_mapping and r_id in ground_truth_mapping[q_id])
         y_true.append(1 if is_relevant else 0)
-        
-        # For distance metrics, we need similarity-like scores for the PR curve function
-        # (higher is better). We can negate distances.
         if is_similarity:
              y_scores.append(score)
         else:
-             y_scores.append(-score) # Negate distance so lower distance becomes higher score
+             y_scores.append(-score) 
 
     if not y_true:
          return None
@@ -140,14 +117,10 @@ def plot_pr_curve(raw_matches, ground_truth_mapping, distance_metric):
     return fig
 
 import torch
-# Ensure evaluate_model is still available for backward compatibility if needed, 
-# but app.py will use the split functions above.
 def evaluate_model(model_name, distance_metric, base_path=config.BASE_PATH):
-     # This function is now a wrapper for the split logic, calculating metrics at a default threshold (e.g., 0.5 for cosine)
      raw_matches, ground_truth_mapping, _, _ = run_evaluation_search(model_name, distance_metric, base_path)
      
      similarity_metrics = ["cosine", "dot_product"]
-     # Set a reasonable default threshold for initial calculation
      default_threshold = 0.5 if distance_metric in similarity_metrics else 10.0
 
      filtered_matches = filter_matches_by_threshold(raw_matches, distance_metric, default_threshold)
@@ -159,8 +132,8 @@ def evaluate_model(model_name, distance_metric, base_path=config.BASE_PATH):
         "precision": precision,
         "recall": recall,
         "f1_score": f1,
-        "matches": relevant_matches, # Returns matches at default threshold
+        "matches": relevant_matches,
         "pr_curve_plot": fig,
-        "raw_matches": raw_matches, # keep raw for re-filtering
+        "raw_matches": raw_matches, 
         "ground_truth": ground_truth_mapping
     }

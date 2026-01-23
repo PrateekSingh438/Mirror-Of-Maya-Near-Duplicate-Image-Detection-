@@ -5,7 +5,6 @@ from datetime import datetime
 import config
 
 def initialize_session_state():
-    """Initialize session state variables"""
     defaults = {
         'detector': None,
         'duplicates': [],
@@ -27,7 +26,6 @@ def initialize_session_state():
             st.session_state[key] = value
 
 def save_session_state():
-    """Save session to disk"""
     try:
         state_data = {
             'optimal_thresh': st.session_state.optimal_thresh,
@@ -44,7 +42,6 @@ def save_session_state():
         st.warning(f"Could not save session: {str(e)}")
 
 def load_session_state():
-    """Load previous session"""
     try:
         if os.path.exists('session_state.json'):
             with open('session_state.json', 'r') as f:
@@ -61,7 +58,6 @@ def load_session_state():
     return None
 
 def recalculate_metrics(threshold):
-    """Recalculate metrics at given threshold"""
     if not st.session_state.get('all_duplicates') or not st.session_state.get('ground_truth'):
         return 0.0, 0.0, 0.0
     

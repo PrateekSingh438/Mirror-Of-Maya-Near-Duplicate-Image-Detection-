@@ -10,32 +10,27 @@ from plotly.subplots import make_subplots
 import numpy as np
 
 
-def dashboard_tab():
-    """Maya-themed Dashboard: Piercing the Veil of Digital Illusions"""
-    
+def dashboard_tab():  
     if not st.session_state.duplicates:
         st.markdown("""
         <div style='text-align: center; padding: 4rem 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1)); border-radius: 1rem; border: 2px solid rgba(139, 92, 246, 0.3);'>
-            <h2 style='color: #a855f7; font-size: 2rem; margin-bottom: 1rem;'>🔱 The Sudarshana Chakra Awaits</h2>
+            <h2 style='color: #a855f7; font-size: 2rem; margin-bottom: 1rem;'>The Sudarshana Chakra Awaits</h2>
             <p style='color: #94a3b8; font-size: 1.2rem;'>Click 'Full Scan' to pierce through the veil of digital illusions</p>
             <p style='color: #64748b; margin-top: 1rem;'>Just as Maya creates a thousand forms from one truth, this system reveals the original soul beneath countless digital avatars</p>
         </div>
         """, unsafe_allow_html=True)
         return
     
-    # Hero metrics
     st.markdown("""
     <div style='text-align: center; margin-bottom: 2rem;'>
         <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%); 
                    -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
                    font-size: 2.5rem; font-weight: 800;'>
-            ⚡ SUDARSHANA: Digital Discernment Engine
+            ⚡ Mirror Of Maya: Digital Discernment Engine
         </h2>
         <p style='color: #94a3b8; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Key metrics cards
     clustering_mode = st.session_state.get('clustering_mode', 'basename')
     clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
     unique_dups = sum(len(c['duplicates']) for c in clusters)
@@ -77,7 +72,7 @@ def dashboard_tab():
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); 
                     padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(16, 185, 129, 0.3);'>
-            <div style='color: #34d399; font-size: 0.875rem; font-weight: 600;'>AVATAR SIMILARITY</div>
+            <div style='color: #34d399; font-size: 0.875rem; font-weight: 600;'>IMAGE SIMILARITY</div>
             <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{avg_sim:.1%}</div>
             <div style='color: #94a3b8; font-size: 0.75rem;'>Average resemblance</div>
         </div>
@@ -85,7 +80,6 @@ def dashboard_tab():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Main visualization section
     if st.session_state.calibration_history:
         df_cal = pd.DataFrame(st.session_state.calibration_history)
         
@@ -106,7 +100,7 @@ def dashboard_tab():
 
 def _render_calibration_curves(df_cal):
     """Render main calibration curves"""
-    st.markdown("### 🔱 The Path of Discernment")
+    st.markdown("### The Path of Discernment")
     st.markdown("*Watch how the Sudarshana Chakra's precision evolves across threshold levels*")
     
     col_chart, col_table = st.columns([2, 1])
@@ -367,7 +361,7 @@ def _render_score_distribution():
 
 def _render_detection_insights(df_cal):
     """Render additional insights"""
-    st.markdown("### ⚡ Detection Insights")
+    st.markdown("### Detection Insights")
     
     col1, col2 = st.columns(2)
     

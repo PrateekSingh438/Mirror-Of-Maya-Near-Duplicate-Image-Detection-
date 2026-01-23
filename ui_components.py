@@ -10,7 +10,6 @@ if 'clustering_mode' not in st.session_state:
     st.session_state.clustering_mode = 'basename'
 
 def apply_custom_css():
-    """Apply Maya-themed custom CSS styling"""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -252,7 +251,6 @@ def apply_custom_css():
     """, unsafe_allow_html=True)
 
 def render_header():
-    """Render Maya-themed main header"""
     st.markdown('''
     <div style="text-align: center; margin-bottom: 2rem;">
         <h1 class="main-header">SUDARSHANA</h1>
@@ -266,8 +264,7 @@ def render_header():
     ''', unsafe_allow_html=True)
 
 def render_clustering_mode_selector():
-    """Clustering mode selector with Maya theme"""
-    with st.expander("🔱 Avatar Detection Mode", expanded=True):
+    with st.expander("Avatar Detection Mode", expanded=True):
         st.markdown("""
         <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem;'>
             Choose how the Chakra groups similar souls
@@ -289,14 +286,13 @@ def render_clustering_mode_selector():
             st.rerun()
 
         if mode == "basename":
-            st.info("📜 Only groups avatars sharing the same name essence")
+            st.info("Only groups avatars sharing the same name essence")
         else:
-            st.warning("⚡ Groups all visually resonant souls (may include distant cousins)")
+            st.warning("Groups all visually resonant souls (may include distant cousins)")
 
 def render_sidebar():
-    """Render Maya-themed sidebar"""
     with st.sidebar:
-        st.markdown("### 🔱 DIVINE CONTROLS")
+        st.markdown("### DIVINE CONTROLS")
         st.markdown("---")
         
         _render_model_selection()
@@ -310,27 +306,25 @@ def render_sidebar():
         _render_session_info()
 
 def _render_model_selection():
-    """Model selection"""
-    with st.expander("🧠 Vision Oracle Selection", expanded=True):
+    with st.expander("MODEL SELECTION", expanded=True):
         available_models = {
-            "DINOv2 Small (Swift)": "facebook/dinov2-small",
-            "DINOv2 Base (Balanced)": "facebook/dinov2-base",
-            "DINOv2 Large (Omniscient)": "facebook/dinov2-large"
+            "DINOv2 Small (21M paramaters)": "facebook/dinov2-small",
+            "DINOv2 Base (86M parameters)": "facebook/dinov2-base",
+            "DINOv2 Large (300M parameters)": "facebook/dinov2-large"
         }
         
         selected_model_name = st.selectbox(
-            "Oracle Power Level:",
+            "Model Power Level:",
             list(available_models.keys()),
             index=list(available_models.values()).index(st.session_state.selected_model)
         )
         st.session_state.selected_model = available_models[selected_model_name]
         
         if st.session_state.selected_model != config.MODEL_ID:
-            st.info("⚡ Oracle change requires re-consecration (re-scan)")
+            st.info("Model change requires re-consecration (re-scan)")
 
 def _render_dataset_config():
-    """Dataset configuration"""
-    with st.expander("📚 Sacred Repository", expanded=True):
+    with st.expander("Sacred Repository", expanded=True):
         dataset_path = st.text_input("Repository Path:", value=config.DATASET_PATH, key="dataset_path_input")
         
         if os.path.exists(dataset_path):
@@ -340,7 +334,6 @@ def _render_dataset_config():
             st.error("❌ Repository not found in this realm")
 
 def _render_scan_button():
-    """Main scan button"""
     if st.button("🔄 INVOKE CHAKRA", type="primary", use_container_width=True):
         dataset_path = st.session_state.get('dataset_path_input', config.DATASET_PATH)
         
@@ -349,7 +342,7 @@ def _render_scan_button():
         else:
             start_time = datetime.now()
             
-            with st.spinner("🔮 Summoning the Oracle..."):
+            with st.spinner("🔮 Summoning the Model..."):
                 config.MODEL_ID = st.session_state.selected_model
                 detector = DuplicateDetector()
             
@@ -393,7 +386,6 @@ def _render_scan_button():
             st.rerun()
 
 def _render_session_info():
-    """Session info display"""
     st.markdown("---")
     st.markdown("### 📊 Oracle's Memory")
     
@@ -410,7 +402,6 @@ def _render_session_info():
         st.info("The Chakra awaits its first invocation")
 
 def render_threshold_control():
-    """Dynamic threshold slider"""
     st.markdown("### 🎚️ Chakra Precision Control")
     st.markdown("*Adjust the sharpness of divine discernment*")
     
@@ -448,14 +439,13 @@ def render_threshold_control():
         f1, prec, rec = recalculate_metrics(st.session_state.current_slider_val)
         
         mcol1, mcol2, mcol3 = st.columns(3)
-        mcol1.metric("⚖️ Balance", f"{f1:.1%}")
-        mcol2.metric("✅ Certainty", f"{prec:.1%}")
-        mcol3.metric("📊 Coverage", f"{rec:.1%}")
+        mcol1.metric("F1", f"{f1:.1%}")
+        mcol2.metric("Precision", f"{prec:.1%}")
+        mcol3.metric("Recall", f"{rec:.1%}")
     
     st.markdown("---")
 
 def get_short_path(path):
-    """Shorten path for display"""
     try:
         if not path: 
             return ""
@@ -466,9 +456,8 @@ def get_short_path(path):
         return os.path.basename(path)
 
 def get_similarity_class(score):
-    """Get CSS class for similarity score"""
-    if score >= 0.90:
+    if score >= 0.95:
         return "similarity-high"
-    elif score >= 0.75:
+    elif score >= 0.88:
         return "similarity-medium"
     return "similarity-low"
