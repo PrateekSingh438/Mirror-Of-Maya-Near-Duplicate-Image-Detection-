@@ -309,7 +309,7 @@ def _render_scan_button():
                 config.MODEL_ID = st.session_state.selected_model
                 detector = DuplicateDetector()
             
-            with st.spinner("📿 Scanning database..."):
+            with st.spinner("Scanning database..."):
                 detector.bulk_index(dataset_path)
                 st.session_state.detector = detector
             
