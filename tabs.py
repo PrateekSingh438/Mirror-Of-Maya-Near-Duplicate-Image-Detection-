@@ -181,7 +181,7 @@ def _render_calibration_curves(df_cal):
             )
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col_table:
         st.markdown("**📈 Performance Metrics**")
@@ -195,7 +195,7 @@ def _render_calibration_curves(df_cal):
                 'recall': '{:.3f}',
                 'threshold': '{:.2f}'
             }),
-            use_container_width=True,
+            width='stretch',
             height=450
         )
 
@@ -250,7 +250,7 @@ def _render_performance_matrix(df_cal):
             font=dict(color='#e2e8f0')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         # Precision-Recall trade-off
@@ -282,7 +282,7 @@ def _render_performance_matrix(df_cal):
             font=dict(color='#e2e8f0')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 def _render_score_distribution():
     """Render similarity score distributions"""
@@ -328,7 +328,7 @@ def _render_score_distribution():
             showlegend=False
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         # Box plot by score ranges
@@ -357,7 +357,7 @@ def _render_score_distribution():
             font=dict(color='#e2e8f0')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 def _render_detection_insights(df_cal):
     """Render additional insights"""
@@ -389,7 +389,7 @@ def _render_detection_insights(df_cal):
             font=dict(color='#e2e8f0')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         # Method breakdown
@@ -415,7 +415,7 @@ def _render_detection_insights(df_cal):
             font=dict(color='#e2e8f0')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     # Performance summary
     st.markdown("---")
@@ -455,20 +455,20 @@ def manager_tab():
     # Actions
     col1, col2, col3 = st.columns(3)
     
-    if col1.button("✅ Select All", use_container_width=True):
+    if col1.button("✅ Select All", width='stretch'):
         for c in clusters:
             for d in c['duplicates']:
                 st.session_state.deletion_queue.add(d['path'])
         st.rerun()
     
-    if col2.button("❌ Clear", use_container_width=True):
+    if col2.button("❌ Clear", width='stretch'):
         st.session_state.deletion_queue.clear()
         st.rerun()
     
     if st.session_state.deletion_queue and col3.button(
         f"🗑️ Delete ({len(st.session_state.deletion_queue)})",
         type="primary",
-        use_container_width=True
+        width='stretch'
     ):
         deleted = 0
         progress_bar = st.progress(0)
@@ -513,7 +513,7 @@ def manager_tab():
             with col_orig:
                 st.markdown("*Original*")
                 try:
-                    st.image(cluster['original'], use_container_width=True)
+                    st.image(cluster['original'], width='stretch')
                     st.caption(get_short_path(cluster['original']))
                 except:
                     st.error("Load failed")
@@ -525,7 +525,7 @@ def manager_tab():
                 for idx, dup in enumerate(cluster['duplicates']):
                     c = dup_cols[idx % 3]
                     try:
-                        c.image(dup['path'], use_container_width=True)
+                        c.image(dup['path'], width='stretch')
                         score_pct = dup['score'] * 100
                         badge_class = get_similarity_class(dup['score'])
                         c.markdown(
@@ -553,7 +553,7 @@ def manager_tab():
     col_prev, col_center, col_next = st.columns([1, 2, 1])
     
     with col_prev:
-        if st.session_state.page > 0 and st.button("← Prev", use_container_width=True):
+        if st.session_state.page > 0 and st.button("← Prev", width='stretch'):
             st.session_state.page -= 1
             st.rerun()
     
@@ -561,7 +561,7 @@ def manager_tab():
         st.markdown(f"<div style='text-align: center; padding-top: 0.5rem;'>Page {st.session_state.page + 1} / {total_pages}</div>", unsafe_allow_html=True)
     
     with col_next:
-        if end < len(clusters) and st.button("Next →", use_container_width=True):
+        if end < len(clusters) and st.button("Next →", width='stretch'):
             st.session_state.page += 1
             st.rerun()
 
@@ -584,7 +584,7 @@ def search_tab():
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.image(config.TEMP_QUERY_FILE, caption="Query", use_container_width=True)
+            st.image(config.TEMP_QUERY_FILE, caption="Query", width='stretch')
         
         with st.spinner("Searching..."):
             results = st.session_state.detector.find_matches_for_file(
@@ -603,7 +603,7 @@ def search_tab():
                         res = results[i + j]
                         with col:
                             try:
-                                st.image(res['path'], use_container_width=True)
+                                st.image(res['path'], width='stretch')
                                 score_pct = res['score'] * 100
                                 badge_class = get_similarity_class(res['score'])
                                 st.markdown(
@@ -660,7 +660,7 @@ def analytics_tab():
         for d in c['duplicates']
     ])
     
-    st.dataframe(df_details, use_container_width=True, height=400)
+    st.dataframe(df_details, width='stretch', height=400)
 
 def hash_duplicates_tab():
     """Hash-based duplicates"""
@@ -686,10 +686,10 @@ def hash_duplicates_tab():
                         try:
                             st.markdown(f"**Pair {i + j + 1}**")
                             
-                            st.image(dup['file1'], caption="File 1", use_container_width=True)
+                            st.image(dup['file1'], caption="File 1", width='stretch')
                             st.caption(get_short_path(dup['file1']))
                             
-                            st.image(dup['file2'], caption="File 2", use_container_width=True)
+                            st.image(dup['file2'], caption="File 2", width='stretch')
                             st.caption(get_short_path(dup['file2']))
                             
                             score_pct = dup['score'] * 100
@@ -746,9 +746,9 @@ def versus_tab():
         # Display images
         col_disp1, col_disp2 = st.columns(2)
         with col_disp1:
-            st.image(temp1, use_container_width=True)
+            st.image(temp1, width='stretch')
         with col_disp2:
-            st.image(temp2, use_container_width=True)
+            st.image(temp2, width='stretch')
         
         st.markdown("---")
         

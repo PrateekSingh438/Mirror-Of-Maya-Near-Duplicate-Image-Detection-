@@ -334,7 +334,7 @@ def _render_dataset_config():
             st.error("❌ Repository not found in this realm")
 
 def _render_scan_button():
-    if st.button("🔄 INVOKE CHAKRA", type="primary", use_container_width=True):
+    if st.button("🔄 INVOKE CHAKRA", type="primary", width='stretch'):
         dataset_path = st.session_state.get('dataset_path_input', config.DATASET_PATH)
         
         if not os.path.exists(dataset_path):
