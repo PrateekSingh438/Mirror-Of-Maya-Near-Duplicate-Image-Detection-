@@ -41,7 +41,7 @@ class DuplicateDetector:
                 faiss.normalize_L2(vector)
             
             return vector
-        except Exception as e:
+        except:
             return None
     
     def _compute_hash(self, image_path):
@@ -57,9 +57,9 @@ class DuplicateDetector:
         
         from utils import walk_image_files
         files = list(walk_image_files(folder))
-        print(f"📁 Found {len(files)} images")
+        print(f"📂 Found {len(files)} images")
         
-        # Phase 1: Hash
+        # Phase 1: Hash-based fast detection
         print(f"⚡ Phase 1: Hashing...")
         files_for_dino = []
         
@@ -87,7 +87,7 @@ class DuplicateDetector:
                 self.hash_buckets[bucket].append((h, f))
                 files_for_dino.append(f)
         
-        # Phase 2: Embedding
+        # Phase 2: Embedding-based detection
         if files_for_dino:
             print(f"🧠 Phase 2: Embedding ({len(files_for_dino)} unique)...")
             batch_vecs = []
@@ -111,20 +111,13 @@ class DuplicateDetector:
         
         print(f"✅ Indexed {self.index.ntotal} images")
 
-    # ------------------------------------------------------------------
-    # NEW METHOD ADDED (UNCHANGED AS PROVIDED)
-    # ------------------------------------------------------------------
-
     def calibrate_threshold(self, dataset_path):
-        """
-        FIXED: Uses full path comparison for accurate metrics
-        """
+        """Calibrate threshold using full path comparison"""
         print("⚖️ Calibrating threshold...")
         
-        from utils import generate_proper_ground_truth, normalize_pair
+        from utils import generate_ground_truth, normalize_pair_fullpath
         
-        gt_pairs = generate_proper_ground_truth(dataset_path)
-        history = []
+        gt_pairs = generate_ground_truth(dataset_path)
         
         if not gt_pairs:
             print("⚠️ No ground truth")
@@ -134,26 +127,23 @@ class DuplicateDetector:
         
         best_f1 = -1
         best_thresh = config.DEFAULT_THRESHOLD
+        history = []
         
-        # Get ALL duplicates at minimum threshold
+        # Get all duplicates at minimum threshold
         min_thresh = min(config.CALIBRATION_THRESHOLDS)
         all_duplicates = self._find_duplicates_internal(threshold=min_thresh, silent=True)
         
-        print(f"\n🔍 Found {len(all_duplicates)} total duplicate pairs at threshold {min_thresh}")
+        print(f"\n🔍 Found {len(all_duplicates)} pairs at threshold {min_thresh}")
         
-        # CRITICAL FIX: Use full paths for ground truth
-        gt_set = set(normalize_pair(p) for p in gt_pairs)
-        
-        print(f"\n📋 Ground truth uses FULL PATHS:")
-        for i, pair in enumerate(list(gt_set)[:3]):
-            print(f"   {i+1}. {pair}")
+        # Normalize ground truth using FULL PATHS
+        gt_set = set(normalize_pair_fullpath(p) for p in gt_pairs)
         
         for thresh in config.CALIBRATION_THRESHOLDS:
-            # Filter duplicates by current threshold
+            # Filter by threshold
             filtered = [d for d in all_duplicates if d['score'] >= thresh]
             
-            # CRITICAL FIX: Normalize detected pairs with FULL PATHS
-            det_set = set(normalize_pair((d['file1'], d['file2'])) for d in filtered)
+            # Normalize detected pairs using FULL PATHS
+            det_set = set(normalize_pair_fullpath((d['file1'], d['file2'])) for d in filtered)
             
             # Calculate metrics
             tp = len(det_set.intersection(gt_set))
@@ -175,8 +165,8 @@ class DuplicateDetector:
                 "fn": fn
             })
             
-            print(f"  Thresh {thresh:.2f}: F1={f1:.4f}, Prec={prec:.4f}, Rec={rec:.4f}, "
-                  f"Detected={len(filtered)}, TP={tp}, FP={fp}, FN={fn}")
+            print(f"  {thresh:.2f}: F1={f1:.4f}, P={prec:.4f}, R={rec:.4f}, "
+                  f"Det={len(filtered)}, TP={tp}, FP={fp}, FN={fn}")
             
             if f1 >= best_f1:
                 best_f1 = f1
@@ -186,9 +176,6 @@ class DuplicateDetector:
         self.optimal_threshold = best_thresh
         
         return best_thresh, best_f1, history, gt_pairs
-
-    
-
     
     def _find_duplicates_internal(self, threshold, silent=False):
         duplicates = list(self.fast_duplicates)
@@ -243,7 +230,7 @@ class DuplicateDetector:
         return self._find_duplicates_internal(t)
     
     def find_matches_for_file(self, file_path, threshold=None, top_k=50):
-        """Single file matching - works correctly"""
+        """Find matches for single file"""
         threshold = threshold or self.optimal_threshold
         
         vec = self._generate_embedding(file_path)
@@ -262,3 +249,28 @@ class DuplicateDetector:
                 })
         
         return results
+    
+    def compare_two_images(self, img1_path, img2_path):
+        """Compare two specific images"""
+        vec1 = self._generate_embedding(img1_path)
+        vec2 = self._generate_embedding(img2_path)
+        
+        if vec1 is None or vec2 is None:
+            return None
+        
+        # Compute cosine similarity
+        similarity = float(np.dot(vec1[0], vec2[0]))
+        
+        # Also compute hash similarity
+        h1 = self._compute_hash(img1_path)
+        h2 = self._compute_hash(img2_path)
+        
+        hash_dist = None
+        if h1 and h2:
+            hash_dist = imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2)
+        
+        return {
+            "similarity": similarity,
+            "hash_distance": hash_dist,
+            "match": similarity >= self.optimal_threshold
+        }

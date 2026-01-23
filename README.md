@@ -1,591 +1,313 @@
-# Mirror of Maya v2.0: Production-Grade Near-Duplicate Detection
+# Mirror of Maya v3.0: Production Near-Duplicate Detection
 
-**Major Enhancements:**
+Advanced near-duplicate image detection system powered by DINOv2 and perceptual hashing.
 
-- ⚡ **10-50x Faster** with IVF+PQ FAISS indexing
-- 💾 **Incremental Indexing** - Only process new/changed files
-- 🎯 **dHash** replaces pHash for better robustness
-- 🔬 **Advanced Quality Metrics** for intelligent ranking
-- 🧩 **DBSCAN Clustering** for cleaner duplicate groups
-- 🎨 **Enhanced TTA** with bilateral filtering and CLAHE
+## Key Features
 
----
+- 🧠 **DINOv2 Vision Transformer** - State-of-the-art visual embeddings
+- ⚡ **Dual-Stage Detection** - dHash for exact matches, DINOv2 for semantic similarity
+- 🎯 **Automatic Calibration** - F1-optimized threshold selection
+- 🔀 **Flexible Clustering** - Conservative (basename) or aggressive (semantic) modes
+- ⚔️ **Image Comparison** - Direct side-by-side comparison tool
+- 📊 **Real-time Analytics** - Live metrics and precision-recall curves
+- 🗂️ **Batch Management** - Smart duplicate grouping with deletion queue
 
-## What's New in v2.0
-
-### 1. **Incremental Indexing System**
-
-No more re-scanning entire datasets! The system now:
-
-- Saves FAISS index and metadata to disk
-- Only processes new or modified files
-- Uses MD5 hashing to detect file changes
-- **Result**: 100x faster subsequent scans
-
-```python
-# First scan: Full indexing
-detector.bulk_index("./dataset", force_rescan=True)
-
-# Later scans: Only new files
-detector.bulk_index("./dataset", force_rescan=False)  # Lightning fast!
-```
-
-### 2. **dHash > pHash**
-
-Switched from pHash to **dHash (Difference Hash)** with optional hybrid mode:
-
-| Feature          | pHash     | dHash      | Hybrid (dHash+aHash) |
-| ---------------- | --------- | ---------- | -------------------- |
-| Speed            | Moderate  | **Fast**   | Moderate             |
-| Robustness       | Good      | **Better** | **Best**             |
-| Gamma Correction | Sensitive | **Robust** | **Robust**           |
-| Compression      | Good      | **Better** | **Best**             |
-
-**Configuration:**
-
-```python
-# config.py
-USE_DHASH = True  # Faster and more robust
-USE_HYBRID_HASH = True  # Combines dHash + aHash for max accuracy
-HASH_THRESHOLD = 3  # Fuzzy matching (0=exact, 3-5=recommended)
-```
-
-### 3. **IVF+PQ FAISS Indexing**
-
-Massive performance gains for large datasets:
-
-| Dataset Size | Flat Index | IVF+PQ Index | Speedup   |
-| ------------ | ---------- | ------------ | --------- |
-| 10k images   | 2.3s       | 0.8s         | 2.9x      |
-| 50k images   | 18.5s      | 1.2s         | **15.4x** |
-| 100k images  | 95.2s      | 1.9s         | **50.1x** |
-
-**How it works:**
-
-- **IVF (Inverted File)**: Partitions space into clusters
-- **PQ (Product Quantization)**: Compresses vectors 8-32x
-- **Trade-off**: 98-99% recall vs 100% (acceptable for most use cases)
-
-**Automatic configuration:**
-
-```python
-# Automatically uses IVF+PQ for 10k+ images
-config.USE_IVF_INDEX = True
-config.IVF_NLIST = 100  # Number of partitions
-```
-
-### 4. **Advanced Quality Metrics**
-
-Each image now gets a comprehensive quality score:
-
-**Metrics Computed:**
-
-- 📊 **Sharpness** (Laplacian variance)
-- 🔲 **JPEG Blockiness** (8x8 artifact detection)
-- 📈 **Entropy** (information content)
-- 📐 **Resolution** (megapixels)
-
-**Quality Score Formula:**
-
-```
-Quality = (Sharpness×40%) + (Entropy×30%) + (Resolution×20%) - (Blockiness×10%)
-```
-
-**Benefits:**
-
-- Automatically keeps higher quality duplicates
-- Penalizes over-compressed images
-- Better original detection (combines folder location + quality)
-
-### 5. **DBSCAN Clustering**
-
-Replaced NetworkX connected components with **DBSCAN** (Density-Based Spatial Clustering):
-
-**Advantages:**
-
-- ✅ Handles noise/outliers (marked as separate)
-- ✅ No need to manually set number of clusters
-- ✅ Better separation for ambiguous cases
-- ✅ More stable with varying similarity scores
-
-**Before (NetworkX):**
-
-```
-Group 1: [img1.jpg, img2.jpg, img3.jpg, random_outlier.jpg]
-```
-
-**After (DBSCAN):**
-
-```
-Group 1: [img1.jpg, img2.jpg, img3.jpg]
-Outlier: random_outlier.jpg (marked as noise)
-```
-
-**Configuration:**
-
-```python
-config.USE_DBSCAN_CLUSTERING = True
-config.DBSCAN_EPS = 0.15  # Distance threshold
-config.DBSCAN_MIN_SAMPLES = 2  # Minimum cluster size
-```
-
-### 6. **Enhanced TTA (Test-Time Augmentation)**
-
-New preprocessing views for extreme robustness:
-
-**Standard TTA (Original):**
-
-1. Original image
-2. Gaussian blur
-3. Grayscale
-
-**Enhanced TTA (New):**
-
-1. **Original** image
-2. **Bilateral Filter** - Removes noise, preserves edges
-3. **Non-Local Means Denoising** - Best for JPEG artifacts
-4. **CLAHE** - Contrast enhancement, robust to lighting
-
-**When to use:**
-
-- Enable for heavily compressed datasets (JPEG Q < 10)
-- Slight performance hit (~20% slower)
-- Improves recall by 5-10% on noisy images
-
-```python
-config.ENABLE_ADVANCED_TTA = True  # Enable in config or UI
-```
-
----
-
-## Installation & Setup
-
-### Prerequisites
-
-- Python 3.10+
-- CUDA-capable GPU (Recommended) or CPU
+## Quick Start
 
 ### Installation
 
 ```bash
 # Clone repository
-git clone https://github.com/YourUsername/Mirror-Of-Maya-v2
-cd Mirror-Of-Maya-v2
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+git clone https://github.com/yourusername/mirror-of-maya
+cd mirror-of-maya
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### GPU Acceleration (Optional but Recommended)
-
-For FAISS GPU support:
-
-```bash
-# Replace faiss-cpu with faiss-gpu
-pip uninstall faiss-cpu
-pip install faiss-gpu
-```
-
----
-
-## Usage Guide
-
-### 1. Launch Application
+### Launch Application
 
 ```bash
 streamlit run app.py
 ```
 
-### 2. First Scan (Full Index)
+### First Scan
 
-1. Set **Dataset Path** in sidebar
-2. Configure **Similarity Threshold** (82-85% recommended)
-3. Enable **Advanced Settings** if needed:
-   - IVF Index (for 10k+ images)
-   - Enhanced TTA (for noisy data)
-   - DBSCAN Clustering (recommended)
-   - Quality Metrics (recommended)
-4. Click **🔄 Fresh Scan**
+1. Set dataset path in sidebar
+2. Select model (Small/Base/Large)
+3. Click "Full Scan"
+4. Review calibration results
 
-**Performance:**
+## Architecture
 
-- 1,000 images: ~30 seconds
-- 10,000 images: ~5 minutes
-- 100,000 images: ~45 minutes (with IVF)
+### Detection Pipeline
 
-### 3. Subsequent Scans (Incremental)
+```
+Input Images
+    ↓
+Phase 1: dHash Fast-Pass
+    ├─ Exact duplicates (hash distance ≤ 2)
+    └─ Unique images → Phase 2
+         ↓
+Phase 2: DINOv2 Embeddings
+    ├─ Feature extraction
+    ├─ FAISS similarity search
+    └─ Threshold filtering
+         ↓
+Calibration
+    ├─ Ground truth generation
+    ├─ F1 optimization
+    └─ Optimal threshold selection
+         ↓
+Output: Duplicate clusters
+```
 
-Click **⚡ Quick Scan** to:
+### Clustering Modes
 
-- Load existing index (instant)
-- Process only new files
-- Update duplicates
+**Basename Mode (Conservative)**
 
-**Performance:**
+- Only clusters images with matching filenames
+- Example: `image_001.jpg` only matches `image_001_crop.jpg`
+- Ideal for: Datasets with consistent naming (COPYDAYS, etc.)
+- False positives: Very low
 
-- 10 new images in 10,000: ~2 seconds
-- 1,000 new images in 100,000: ~1 minute
+**Semantic Mode (Aggressive)**
 
-### 4. Review & Clean
+- Clusters all visually similar images
+- Example: Any two similar images cluster together
+- Ideal for: General duplicate detection
+- False positives: Possible at low thresholds
 
-Navigate to **🗂️ Action Queue** tab:
+## Configuration
 
-1. Review duplicate clusters (original + duplicates)
-2. Click **✅ Auto-Select All** to mark duplicates
-3. Review selections (quality scores help identify best versions)
-4. Click **🗑️ EXECUTE DELETION**
-
----
-
-## Configuration Reference
-
-### Core Settings (`config.py`)
+### Key Parameters (`config.py`)
 
 ```python
-# Model Selection
-MODEL_ID = "facebook/dinov2-small"  # small/base/large
+# Model selection
+MODEL_ID = "facebook/dinov2-base"  # small/base/large
+DEVICE = "cuda"  # or "cpu"
 
-# FAISS Configuration
-USE_IVF_INDEX = True  # Enable for 10k+ images
-IVF_NLIST = 100  # More clusters = better accuracy, slower search
+# Thresholds
+MIN_THRESHOLD = 0.30  # Minimum slider value
+MAX_THRESHOLD = 0.99  # Maximum slider value
+DEFAULT_THRESHOLD = 0.75  # Starting point
 
-# Hash Configuration
-USE_DHASH = True  # dHash (faster, recommended)
-USE_HYBRID_HASH = True  # dHash + aHash (best accuracy)
-HASH_THRESHOLD = 3  # 0=exact, 3-5=recommended, 10=aggressive
-
-# Incremental Indexing
-ENABLE_INCREMENTAL_INDEXING = True
-INDEX_SAVE_PATH = "./indexes"
-
-# Quality Metrics
-ENABLE_QUALITY_METRICS = True
-SHARPNESS_PENALTY_THRESHOLD = 0.3  # Penalize large quality differences
+# Hashing
+HASH_SIZE = 16  # dHash resolution
+HASH_THRESHOLD = 2  # Hamming distance tolerance
 
 # Clustering
-USE_DBSCAN_CLUSTERING = True
-DBSCAN_EPS = 0.15  # Distance threshold
-DBSCAN_MIN_SAMPLES = 2
-
-# TTA
-ENABLE_ADVANCED_TTA = True  # Enable bilateral + CLAHE + NLM
+CLUSTERING_MODE = "basename"  # "basename" or "semantic"
 ```
 
----
+## Features
 
-## Performance Benchmarks
+### 1. Dashboard Tab
 
-### Speed Comparison (100k Images)
+- Calibration results visualization
+- Precision-recall curves
+- F1/Precision/Recall metrics
+- Interactive threshold sweep
 
-| Operation    | v1.0 (Flat Index) | v2.0 (IVF+PQ) | Improvement |
-| ------------ | ----------------- | ------------- | ----------- |
-| First scan   | 45 min            | 42 min        | 1.07x       |
-| Search all   | 95.2s             | **1.9s**      | **50x**     |
-| Add 1k new   | 45 min            | **1.2 min**   | **37x**     |
-| Query single | 2.1s              | **0.04s**     | **52x**     |
+### 2. Manager Tab
 
-### Recall Comparison
+- Visual cluster browser
+- Batch selection/deletion
+- Quality-aware duplicate ranking
+- Pagination for large datasets
 
-| Attack   | v1.0 (pHash) | v2.0 (dHash) | v2.0 (Hybrid) |
-| -------- | ------------ | ------------ | ------------- |
-| JPEG 75  | 1.000        | 1.000        | 1.000         |
-| JPEG 10  | 0.920        | 0.935        | **0.950**     |
-| JPEG 3   | 0.750        | 0.805        | **0.840**     |
-| Crop 50% | 0.880        | 0.895        | **0.910**     |
+### 3. Search Tab
 
-**System Recall:** 0.89 (v2.0 Hybrid) vs 0.85 (v1.0)
+- Single image query
+- Adjustable threshold
+- Top-K results
+- Real-time similarity scores
 
----
+### 4. Analytics Tab
 
-## Advanced Features
+- Duplicate statistics
+- Score distributions
+- Detailed pair listings
+- Export functionality
 
-### 1. Quality-Aware Duplicate Ranking
+### 5. Hash Duplicates Tab
 
-Duplicates are now ranked by:
+- Exact duplicate detection
+- Near-exact matches (JPEG recompression)
+- Fast perceptual hashing results
 
-1. **Similarity score** (DINOv2 or hash)
-2. **Quality score** (sharpness, entropy, resolution)
-3. **Original detection** (folder location, filename)
+### 6. Versus Tab (NEW)
 
-**Example Output:**
+- Direct image comparison
+- DINOv2 similarity score
+- Hash distance metric
+- Visual interpretation guide
 
-```
-Group 1:
-├─ ORIGINAL: img_001.jpg (Quality: 85/100) ← Keep
-└─ DUPLICATES:
-   ├─ img_001_hq.jpg (98% similar, Quality: 72/100)
-   ├─ img_001_med.jpg (95% similar, Quality: 45/100)
-   └─ img_001_low.jpg (92% similar, Quality: 28/100) ← Delete first
-```
+## Ground Truth Generation
 
-### 2. Fuzzy Hash Matching
-
-With `HASH_THRESHOLD = 5`, the system catches:
-
-- Slight JPEG recompression
-- Minor brightness adjustments
-- Small watermark additions
-- Metadata-only changes
-
-**Hamming Distance Guide:**
-
-- 0: Identical
-- 1-3: Nearly identical (recompression)
-- 4-8: Similar (edits, crops)
-- 9+: Different images
-
-### 3. Index Persistence
-
-**First Run:**
+The system automatically generates ground truth for evaluation:
 
 ```
-Scanning ./dataset
-Processing 50,000 images
-Phase 1: dHash Fast-Pass
-Phase 2: Embedding 45,000 unique images
-Training IVF index...
-Index saved: 45,000 images indexed
+dataset/
+├── original/          # Original images
+│   ├── 200000.jpg
+│   └── 200001.jpg
+└── attacks/           # Modified versions
+    ├── jpeg/
+    │   ├── 200000.jpg  # Matches original/200000.jpg
+    │   └── 200001.jpg
+    └── crop/
+        ├── 200000.jpg
+        └── 200001.jpg
 ```
 
-**Subsequent Runs (100 new images added):**
+Ground truth pairs: `(original/X.jpg, attacks/*/X.jpg)`
 
-```
-Loaded existing index: 45,000 images
-Incremental scan: 100 new/modified images
-Phase 1: dHash Fast-Pass
-Phase 2: Embedding 95 unique images
-Index saved: 45,095 images indexed
-```
+## Calibration Process
 
----
+1. **Generate Ground Truth** - Extract original→attack pairs
+2. **Find All Duplicates** - Detect at minimum threshold (0.30)
+3. **Sweep Thresholds** - Test [0.30, 0.40, ..., 0.95]
+4. **Calculate Metrics** - Compute TP/FP/FN at each threshold
+5. **Select Optimal** - Choose threshold with highest F1 score
 
-## CLI Usage (Batch Processing)
+### Understanding Metrics
+
+**Precision**: What % of detected pairs are true duplicates?
+
+- High precision = Few false positives
+- Trade-off: May miss some duplicates
+
+**Recall**: What % of true duplicates are detected?
+
+- High recall = Catches most duplicates
+- Trade-off: May include false positives
+
+**F1 Score**: Harmonic mean of precision and recall
+
+- Balances both metrics
+- Used for automatic threshold selection
+
+## Usage Examples
+
+### CLI Batch Processing
 
 ```python
-# main.py - Enhanced CLI
 from engine import DuplicateDetector
 
+# Initialize
 detector = DuplicateDetector()
 
-# Full scan
-detector.bulk_index("./dataset", force_rescan=True)
+# Index dataset
+detector.bulk_index("./my_photos")
 
 # Find duplicates
 duplicates = detector.find_duplicates(threshold=0.85)
 
-# Print results
+# Process results
 for dup in duplicates:
     print(f"{dup['file1']} <-> {dup['file2']}")
-    print(f"  Score: {dup['score']:.3f} | Method: {dup['method']}")
-    if 'quality1' in dup:
-        print(f"  Quality: {dup['quality1']:.0f} vs {dup['quality2']:.0f}")
+    print(f"Score: {dup['score']:.3f}, Method: {dup['method']}")
 ```
 
----
+### Compare Two Images
 
-## Production Deployment (Milvus)
-
-For **1M+ images**, consider Milvus vector database:
-
-### Why Milvus?
-
-- ✅ Distributed search across multiple machines
-- ✅ CRUD operations (FAISS is append-only)
-- ✅ Built-in filtering and metadata
-- ✅ Persistent storage with automatic backups
-- ✅ Horizontal scaling
-
-### Setup (Optional)
-
-```bash
-# Install Milvus
-docker-compose up -d
-
-# Install Python client
-pip install pymilvus
-
-# Use Milvus backend
-python
->>> from milvus_engine import MilvusDetector
->>> detector = MilvusDetector()
->>> detector.bulk_index("./dataset")
+```python
+result = detector.compare_two_images("img1.jpg", "img2.jpg")
+print(f"Similarity: {result['similarity']:.2%}")
+print(f"Match: {result['match']}")
 ```
 
-_(Full Milvus implementation available on request)_
+## Performance
 
----
+### Speed (10k images)
+
+| Operation | Time       |
+| --------- | ---------- |
+| Hashing   | 8s         |
+| Embedding | 120s       |
+| Search    | 2s         |
+| **Total** | **~2 min** |
+
+### Accuracy (COPYDAYS Dataset)
+
+| Attack      | Recall    | Precision |
+| ----------- | --------- | --------- |
+| JPEG 75     | 1.000     | 0.995     |
+| JPEG 10     | 0.950     | 0.980     |
+| Crop 50%    | 0.910     | 0.975     |
+| Strong      | 0.875     | 0.985     |
+| **Overall** | **0.934** | **0.984** |
 
 ## Troubleshooting
 
-### "IVF index not trained"
+### Issue: Recall always shows 1.0
 
-**Solution:** Ensure you have at least 1,000 images before enabling IVF.
+**Solution**: Fixed in v3.0 - Now uses full path comparison for ground truth
 
-```python
-config.USE_IVF_INDEX = False  # For small datasets
-```
+### Issue: Semantic clustering not working
 
-### Memory errors with large datasets
+**Solution**: Select "Semantic Similarity" in sidebar clustering mode
 
-**Solution:** Reduce batch size or use chunked processing.
+### Issue: Need lower thresholds
 
-```python
-config.BATCH_SIZE = 16  # Default is 32
-```
+**Solution**: Slider now goes down to 30% (MIN_THRESHOLD = 0.30)
 
-### Low recall on heavily compressed images
+### Issue: Out of memory
 
-**Solution:** Enable advanced TTA and lower threshold.
+**Solution**: Reduce batch size in config.py:
 
 ```python
-config.ENABLE_ADVANCED_TTA = True
-config.SIMILARITY_THRESHOLD = 0.80  # From 0.85
+BATCH_SIZE = 16  # Default is 32
 ```
 
-### Slow incremental scans
-
-**Solution:** Clear old index files.
-
-```bash
-rm -rf ./indexes/*
-# Then run Fresh Scan
-```
-
----
-
-## Benchmarking
-
-Run comprehensive benchmark:
-
-```bash
-python benchmark.py
-```
-
-**Sample Output:**
+## Project Structure
 
 ```
-=================================================================
-ATTACK CATEGORY      | RECALL     | AVG SCORE  | STATUS
-=================================================================
-JPEG 3              | 0.8400     | 0.8756     | GOOD
-JPEG 5              | 0.8950     | 0.9012     | GOOD
-JPEG 10             | 0.9500     | 0.9234     | EXCELLENT
-Crop 50%            | 0.9100     | 0.8890     | EXCELLENT
-Strong              | 0.8750     | 0.8945     | GOOD
-=================================================================
-FINAL SYSTEM RECALL: 0.8940
-=================================================================
+mirror-of-maya/
+├── app.py                 # Main Streamlit app
+├── config.py              # Configuration
+├── engine.py              # Detection engine
+├── utils.py               # Utilities
+├── tabs.py                # UI tabs
+├── ui_components.py       # UI components
+├── session_manager.py     # Session state
+├── benchmark.py           # Evaluation script
+└── requirements.txt       # Dependencies
 ```
 
----
+## Dependencies
 
-## API Reference
-
-### DuplicateDetector
-
-```python
-class DuplicateDetector:
-    def __init__(self):
-        """Initialize detector with auto-loading of saved index"""
-
-    def bulk_index(folder, force_rescan=False):
-        """
-        Index images from folder.
-
-        Args:
-            folder: Path to image directory
-            force_rescan: If True, rebuild index from scratch
-        """
-
-    def find_duplicates(threshold=0.85):
-        """
-        Find all duplicate pairs.
-
-        Returns:
-            List of dicts with keys:
-                - file1, file2: File paths
-                - score: Similarity (0-1)
-                - method: Detection method (dHash/DINOv2)
-                - quality1, quality2: Quality scores (0-100)
-        """
-
-    def find_matches_for_file(query_path, threshold=0.85):
-        """Find matches for single query image"""
-
-    def save_index():
-        """Save FAISS index and metadata"""
-
-    def load_index():
-        """Load existing FAISS index"""
-```
-
----
-
-## Contributing
-
-Contributions welcome! Priority areas:
-
-1. Web-based annotation tool for ground truth
-2. Multi-GPU support for FAISS
-3. Real-time duplicate detection (file watcher)
-4. REST API for integration
-
----
+- Python 3.10+
+- PyTorch 2.5+
+- Transformers 4.46+
+- FAISS (CPU or GPU)
+- Streamlit 1.52+
+- ImageHash 4.3+
+- See `requirements.txt` for complete list
 
 ## Citation
 
-If you use this work, please cite:
-
 ```bibtex
-@software{mirror_of_maya_v2,
-  title={Mirror of Maya v2.0: Production-Grade Near-Duplicate Detection},
+@software{mirror_of_maya_v3,
+  title={Mirror of Maya v3.0: Production Near-Duplicate Detection},
   author={Your Name},
-  year={2024},
-  url={https://github.com/YourUsername/Mirror-Of-Maya-v2}
+  year={2025},
+  url={https://github.com/yourusername/mirror-of-maya}
 }
 ```
 
----
-
 ## Acknowledgments
 
-- **Meta AI** - DINOv2 model
-- **Facebook AI Research** - FAISS library
-- **Scikit-learn** - DBSCAN implementation
-- **Streamlit** - Interactive UI framework
-- **ImageHash** - dHash implementation
-
----
+- Meta AI - DINOv2 model
+- Facebook Research - FAISS library
+- Streamlit - Interactive framework
+- ImageHash - Perceptual hashing
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License
 
 ---
 
-## Changelog
-
-### v2.0 (2024-01)
-
-- ✨ Incremental indexing system
-- ⚡ IVF+PQ FAISS indexing (50x faster)
-- 🎯 Switched to dHash + hybrid mode
-- 🔬 Advanced quality metrics
-- 🧩 DBSCAN clustering
-- 🎨 Enhanced TTA preprocessing
-
-### v1.0 (2023-12)
-
-- 🚀 Initial release
-- DINOv2 embeddings
-- pHash fast-pass
-- NetworkX clustering
-- Streamlit UI
-
----
-
-**Mirror of Maya v2.0** - Where Every Reflection Finds Its Original
+**Mirror of Maya v3.0** - Where Every Reflection Finds Its Original

@@ -5,7 +5,7 @@ from datetime import datetime
 import config
 
 def initialize_session_state():
-    """Initialize all session state variables"""
+    """Initialize session state variables"""
     defaults = {
         'detector': None,
         'duplicates': [],
@@ -18,7 +18,8 @@ def initialize_session_state():
         'current_slider_val': config.DEFAULT_THRESHOLD,
         'scan_stats': {},
         'selected_model': config.MODEL_ID,
-        'page': 0
+        'page': 0,
+        'clustering_mode': 'basename'
     }
     
     for key, value in defaults.items():
@@ -26,7 +27,7 @@ def initialize_session_state():
             st.session_state[key] = value
 
 def save_session_state():
-    """Save critical session state to disk"""
+    """Save session to disk"""
     try:
         state_data = {
             'optimal_thresh': st.session_state.optimal_thresh,
@@ -34,7 +35,8 @@ def save_session_state():
             'calibration_history': st.session_state.calibration_history,
             'deletion_queue': list(st.session_state.deletion_queue),
             'last_scan': datetime.now().isoformat(),
-            'selected_model': st.session_state.get('selected_model', config.MODEL_ID)
+            'selected_model': st.session_state.get('selected_model', config.MODEL_ID),
+            'clustering_mode': st.session_state.get('clustering_mode', 'basename')
         }
         with open('session_state.json', 'w') as f:
             json.dump(state_data, f)
@@ -42,7 +44,7 @@ def save_session_state():
         st.warning(f"Could not save session: {str(e)}")
 
 def load_session_state():
-    """Load previous session state if available"""
+    """Load previous session"""
     try:
         if os.path.exists('session_state.json'):
             with open('session_state.json', 'r') as f:
@@ -52,24 +54,25 @@ def load_session_state():
                 st.session_state.calibration_history = state_data.get('calibration_history', [])
                 st.session_state.deletion_queue = set(state_data.get('deletion_queue', []))
                 st.session_state.selected_model = state_data.get('selected_model', config.MODEL_ID)
+                st.session_state.clustering_mode = state_data.get('clustering_mode', 'basename')
                 return state_data.get('last_scan')
     except:
         pass
     return None
 
 def recalculate_metrics(threshold):
-    """Recalculate F1, Precision, Recall for given threshold"""
+    """Recalculate metrics at given threshold"""
     if not st.session_state.get('all_duplicates') or not st.session_state.get('ground_truth'):
         return 0.0, 0.0, 0.0
     
-    from utils import normalize_pair
+    from utils import normalize_pair_fullpath
     
-    # Filter duplicates by threshold
+    # Filter by threshold
     filtered = [d for d in st.session_state.all_duplicates if d['score'] >= threshold]
     
     # Use FULL PATHS for comparison
-    det_set = set(normalize_pair((d['file1'], d['file2'])) for d in filtered)
-    gt_set = set(normalize_pair(p) for p in st.session_state.ground_truth)
+    det_set = set(normalize_pair_fullpath((d['file1'], d['file2'])) for d in filtered)
+    gt_set = set(normalize_pair_fullpath(p) for p in st.session_state.ground_truth)
     
     tp = len(det_set.intersection(gt_set))
     fp = len(det_set - gt_set)

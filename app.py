@@ -1,12 +1,12 @@
 import streamlit as st
 from datetime import datetime
 import config
-from ui_components import render_sidebar, render_header, apply_custom_css
-from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab
+from ui_components import render_sidebar, render_header, apply_custom_css, render_threshold_control
+from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab, versus_tab
 from utils import format_file_size, organize_clusters, calculate_wasted_space
 from session_manager import initialize_session_state, load_session_state
 
-# Page Configuration
+# Page config
 st.set_page_config(
     page_title="Mirror of Maya", 
     layout=config.LAYOUT, 
@@ -14,29 +14,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Apply Custom Styling
+# Apply styling
 apply_custom_css()
 
-# Initialize Session State
+# Initialize session
 initialize_session_state()
 load_session_state()
 
-# Render Sidebar
+# Sidebar
 render_sidebar()
 
-# Render Header
+# Header
 render_header()
 
-# Dynamic Threshold Control with Live Metrics
+# Threshold control
 if st.session_state.detector and st.session_state.all_duplicates:
-    from ui_components import render_threshold_control
     render_threshold_control()
 
-# Status Bar
+# Status bar
 if st.session_state.detector:
     visible_dups = st.session_state.duplicates
     
-    # Use clustering mode from session state
     clustering_mode = st.session_state.get('clustering_mode', config.CLUSTERING_MODE)
     clusters = organize_clusters(visible_dups, mode=clustering_mode)
     
@@ -51,8 +49,8 @@ if st.session_state.detector:
 
 st.markdown("---")
 
-# Main Tabs
-tabs = st.tabs(["📊 Dashboard", "🗂️ Manager", "🔎 Search", "📈 Analytics", "⚡ Hash Duplicates"])
+# Tabs
+tabs = st.tabs(["📊 Dashboard", "🗂️ Manager", "🔎 Search", "📈 Analytics", "⚡ Hash Duplicates", "⚔️ Versus"])
 
 with tabs[0]:
     dashboard_tab()
@@ -68,6 +66,9 @@ with tabs[3]:
 
 with tabs[4]:
     hash_duplicates_tab()
+
+with tabs[5]:
+    versus_tab()
 
 # Footer
 st.markdown("---")

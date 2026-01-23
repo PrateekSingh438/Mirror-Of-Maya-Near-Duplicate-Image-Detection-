@@ -5,82 +5,456 @@ import plotly.graph_objects as go
 import config
 from utils import organize_clusters, format_file_size
 from ui_components import get_short_path, get_similarity_class
+import plotly.express as px
+from plotly.subplots import make_subplots
+import numpy as np
+
 
 def dashboard_tab():
-    """Render Dashboard Tab"""
+    """Maya-themed Dashboard: Piercing the Veil of Digital Illusions"""
+    
     if not st.session_state.duplicates:
-        st.info("Click 'Full Scan' to begin detection")
+        st.markdown("""
+        <div style='text-align: center; padding: 4rem 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1)); border-radius: 1rem; border: 2px solid rgba(139, 92, 246, 0.3);'>
+            <h2 style='color: #a855f7; font-size: 2rem; margin-bottom: 1rem;'>🔱 The Sudarshana Chakra Awaits</h2>
+            <p style='color: #94a3b8; font-size: 1.2rem;'>Click 'Full Scan' to pierce through the veil of digital illusions</p>
+            <p style='color: #64748b; margin-top: 1rem;'>Just as Maya creates a thousand forms from one truth, this system reveals the original soul beneath countless digital avatars</p>
+        </div>
+        """, unsafe_allow_html=True)
         return
     
+    # Hero metrics
+    st.markdown("""
+    <div style='text-align: center; margin-bottom: 2rem;'>
+        <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%); 
+                   -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+                   font-size: 2.5rem; font-weight: 800;'>
+            ⚡ SUDARSHANA: Digital Discernment Engine
+        </h2>
+        <p style='color: #94a3b8; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Key metrics cards
+    clustering_mode = st.session_state.get('clustering_mode', 'basename')
+    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
+    unique_dups = sum(len(c['duplicates']) for c in clusters)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2)); 
+                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(99, 102, 241, 0.3);'>
+            <div style='color: #818cf8; font-size: 0.875rem; font-weight: 600;'>ILLUSIONS PIERCED</div>
+            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{unique_dups:,}</div>
+            <div style='color: #94a3b8; font-size: 0.75rem;'>Digital avatars unmasked</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2)); 
+                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(168, 85, 247, 0.3);'>
+            <div style='color: #c084fc; font-size: 0.875rem; font-weight: 600;'>TRUTH CLUSTERS</div>
+            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{len(clusters):,}</div>
+            <div style='color: #94a3b8; font-size: 0.75rem;'>Original souls identified</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(244, 114, 182, 0.2)); 
+                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(236, 72, 153, 0.3);'>
+            <div style='color: #f472b6; font-size: 0.875rem; font-weight: 600;'>DISCERNMENT ACCURACY</div>
+            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{st.session_state.f1_score:.1%}</div>
+            <div style='color: #94a3b8; font-size: 0.75rem;'>F1 Score (Chakra precision)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        avg_sim = np.mean([d['score'] for d in st.session_state.duplicates]) if st.session_state.duplicates else 0
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); 
+                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(16, 185, 129, 0.3);'>
+            <div style='color: #34d399; font-size: 0.875rem; font-weight: 600;'>AVATAR SIMILARITY</div>
+            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{avg_sim:.1%}</div>
+            <div style='color: #94a3b8; font-size: 0.75rem;'>Average resemblance</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Main visualization section
     if st.session_state.calibration_history:
-        st.markdown("### Calibration Results")
-        
-        col_chart, col_table = st.columns([2, 1])
-        
         df_cal = pd.DataFrame(st.session_state.calibration_history)
         
-        with col_chart:
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=df_cal['threshold'], y=df_cal['f1'],
-                mode='lines+markers', name='F1 Score',
-                line=dict(color='#6366f1', width=3)
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df_cal['threshold'], y=df_cal['precision'],
-                mode='lines+markers', name='Precision',
-                line=dict(color='#8b5cf6', width=2)
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df_cal['threshold'], y=df_cal['recall'],
-                mode='lines+markers', name='Recall',
-                line=dict(color='#ec4899', width=2)
-            ))
-            
-            # Current threshold line
-            fig.add_vline(
-                x=st.session_state.current_slider_val,
-                line_dash="dash",
-                line_color="#10b981",
-                annotation_text="Current"
-            )
-            
-            fig.update_layout(
-                xaxis_title="Threshold",
-                yaxis_title="Score",
-                hovermode='x unified',
-                height=350,
-                plot_bgcolor='rgba(15, 15, 35, 0.5)',
-                paper_bgcolor='rgba(0, 0, 0, 0)',
-                font=dict(color='#e2e8f0', size=11)
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+        # Create tabs for different visualizations
+        viz_tabs = st.tabs(["🎯 Calibration Curves", "📊 Performance Matrix", "🌊 Score Distribution", "⚡ Detection Insights"])
         
-        with col_table:
-            st.dataframe(
-                df_cal[["threshold", "f1", "precision", "recall"]]
-                .style.highlight_max(axis=0, subset=["f1"])
-                .format({
-                    'f1': '{:.3f}',
-                    'precision': '{:.3f}',
-                    'recall': '{:.3f}',
-                    'threshold': '{:.2f}'
-                }),
-                use_container_width=True,
-                height=350
-            )
+        with viz_tabs[0]:
+            _render_calibration_curves(df_cal)
+        
+        with viz_tabs[1]:
+            _render_performance_matrix(df_cal)
+        
+        with viz_tabs[2]:
+            _render_score_distribution()
+        
+        with viz_tabs[3]:
+            _render_detection_insights(df_cal)
 
+def _render_calibration_curves(df_cal):
+    """Render main calibration curves"""
+    st.markdown("### 🔱 The Path of Discernment")
+    st.markdown("*Watch how the Sudarshana Chakra's precision evolves across threshold levels*")
+    
+    col_chart, col_table = st.columns([2, 1])
+    
+    with col_chart:
+        fig = go.Figure()
+        
+        # F1 Score - The balance
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'], 
+            y=df_cal['f1'],
+            mode='lines+markers',
+            name='F1 Score (Balance)',
+            line=dict(color='#6366f1', width=4),
+            marker=dict(size=10, symbol='diamond'),
+            hovertemplate='<b>Threshold:</b> %{x:.2f}<br><b>F1:</b> %{y:.3f}<extra></extra>'
+        ))
+        
+        # Precision - The certainty
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'], 
+            y=df_cal['precision'],
+            mode='lines+markers',
+            name='Precision (Certainty)',
+            line=dict(color='#a855f7', width=3, dash='dash'),
+            marker=dict(size=8),
+            hovertemplate='<b>Threshold:</b> %{x:.2f}<br><b>Precision:</b> %{y:.3f}<extra></extra>'
+        ))
+        
+        # Recall - The completeness
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'], 
+            y=df_cal['recall'],
+            mode='lines+markers',
+            name='Recall (Completeness)',
+            line=dict(color='#ec4899', width=3, dash='dot'),
+            marker=dict(size=8),
+            hovertemplate='<b>Threshold:</b> %{x:.2f}<br><b>Recall:</b> %{y:.3f}<extra></extra>'
+        ))
+        
+        # Optimal threshold marker
+        optimal_idx = df_cal['f1'].idxmax()
+        optimal_thresh = df_cal.loc[optimal_idx, 'threshold']
+        optimal_f1 = df_cal.loc[optimal_idx, 'f1']
+        
+        fig.add_vline(
+            x=optimal_thresh,
+            line_dash="solid",
+            line_color="#10b981",
+            line_width=2,
+            annotation_text=f"⚡ Optimal: {optimal_thresh:.2f}",
+            annotation_position="top"
+        )
+        
+        fig.add_trace(go.Scatter(
+            x=[optimal_thresh],
+            y=[optimal_f1],
+            mode='markers',
+            name='Optimal Point',
+            marker=dict(size=20, color='#10b981', symbol='star'),
+            showlegend=False
+        ))
+        
+        fig.update_layout(
+            xaxis_title="Threshold (Strictness Level)",
+            yaxis_title="Score",
+            hovermode='x unified',
+            height=450,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0', size=12),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col_table:
+        st.markdown("**📈 Performance Metrics**")
+        st.dataframe(
+            df_cal[["threshold", "f1", "precision", "recall"]]
+            .style.highlight_max(axis=0, subset=["f1"])
+            .background_gradient(subset=['f1'], cmap='viridis')
+            .format({
+                'f1': '{:.3f}',
+                'precision': '{:.3f}',
+                'recall': '{:.3f}',
+                'threshold': '{:.2f}'
+            }),
+            use_container_width=True,
+            height=450
+        )
+
+def _render_performance_matrix(df_cal):
+    """Render confusion matrix-style visualization"""
+    st.markdown("### ⚖️ Truth vs Detection Matrix")
+    st.markdown("*Understanding True Positives, False Positives, and False Negatives*")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Stacked area chart for TP/FP/FN
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'],
+            y=df_cal['tp'],
+            mode='lines',
+            name='True Positives',
+            fill='tozeroy',
+            line=dict(color='#10b981', width=0),
+            fillcolor='rgba(16, 185, 129, 0.6)'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'],
+            y=df_cal['fp'],
+            mode='lines',
+            name='False Positives',
+            fill='tonexty',
+            line=dict(color='#ef4444', width=0),
+            fillcolor='rgba(239, 68, 68, 0.6)'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'],
+            y=df_cal['fn'],
+            mode='lines',
+            name='False Negatives',
+            fill='tonexty',
+            line=dict(color='#f59e0b', width=0),
+            fillcolor='rgba(245, 158, 11, 0.6)'
+        ))
+        
+        fig.update_layout(
+            title="Detection Breakdown by Threshold",
+            xaxis_title="Threshold",
+            yaxis_title="Count",
+            height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Precision-Recall trade-off
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df_cal['recall'],
+            y=df_cal['precision'],
+            mode='markers+lines',
+            marker=dict(
+                size=df_cal['f1'] * 20,
+                color=df_cal['threshold'],
+                colorscale='Viridis',
+                showscale=True,
+                colorbar=dict(title="Threshold")
+            ),
+            line=dict(color='#6366f1', width=2),
+            text=df_cal['threshold'].apply(lambda x: f"T={x:.2f}"),
+            hovertemplate='<b>Recall:</b> %{x:.3f}<br><b>Precision:</b> %{y:.3f}<br>%{text}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title="Precision-Recall Curve",
+            xaxis_title="Recall (Completeness)",
+            yaxis_title="Precision (Certainty)",
+            height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+def _render_score_distribution():
+    """Render similarity score distributions"""
+    st.markdown("### 🌊 The Spectrum of Resemblance")
+    st.markdown("*How similar are the detected avatars to their originals?*")
+    
+    scores = [d['score'] for d in st.session_state.duplicates]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Histogram
+        fig = go.Figure()
+        
+        fig.add_trace(go.Histogram(
+            x=scores,
+            nbinsx=30,
+            marker=dict(
+                color=scores,
+                colorscale='Viridis',
+                line=dict(color='#1e293b', width=1)
+            ),
+            hovertemplate='<b>Score Range:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>'
+        ))
+        
+        # Add threshold line
+        fig.add_vline(
+            x=st.session_state.current_slider_val,
+            line_dash="dash",
+            line_color="#10b981",
+            line_width=2,
+            annotation_text="Current Threshold"
+        )
+        
+        fig.update_layout(
+            title="Similarity Score Distribution",
+            xaxis_title="Similarity Score",
+            yaxis_title="Frequency",
+            height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0'),
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Box plot by score ranges
+        score_ranges = pd.cut(scores, bins=[0, 0.7, 0.8, 0.9, 1.0], 
+                             labels=['Weak', 'Moderate', 'Strong', 'Very Strong'])
+        
+        fig = go.Figure()
+        
+        for category in ['Weak', 'Moderate', 'Strong', 'Very Strong']:
+            cat_scores = [s for s, r in zip(scores, score_ranges) if r == category]
+            if cat_scores:
+                fig.add_trace(go.Box(
+                    y=cat_scores,
+                    name=category,
+                    marker=dict(color=['#ef4444', '#f59e0b', '#10b981', '#6366f1'][
+                        ['Weak', 'Moderate', 'Strong', 'Very Strong'].index(category)
+                    ])
+                ))
+        
+        fig.update_layout(
+            title="Score Distribution by Strength",
+            yaxis_title="Similarity Score",
+            height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+def _render_detection_insights(df_cal):
+    """Render additional insights"""
+    st.markdown("### ⚡ Detection Insights")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Detection count vs threshold
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df_cal['threshold'],
+            y=df_cal['count'],
+            mode='lines+markers',
+            fill='tozeroy',
+            line=dict(color='#a855f7', width=3),
+            marker=dict(size=8),
+            fillcolor='rgba(168, 85, 247, 0.3)'
+        ))
+        
+        fig.update_layout(
+            title="Total Detections vs Threshold",
+            xaxis_title="Threshold (Strictness)",
+            yaxis_title="Duplicate Pairs Detected",
+            height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Method breakdown
+        methods = {}
+        for d in st.session_state.duplicates:
+            method = d.get('method', 'Unknown')
+            methods[method] = methods.get(method, 0) + 1
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=list(methods.keys()),
+            values=list(methods.values()),
+            hole=0.4,
+            marker=dict(colors=['#6366f1', '#a855f7', '#ec4899']),
+            textinfo='label+percent',
+            textfont=dict(color='#e2e8f0')
+        )])
+        
+        fig.update_layout(
+            title="Detection Method Breakdown",
+            height=350,
+            plot_bgcolor='rgba(0, 0, 0, 0)',
+            paper_bgcolor='rgba(0, 0, 0, 0)',
+            font=dict(color='#e2e8f0')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Performance summary
+    st.markdown("---")
+    st.markdown("### 📋 Sudarshana Performance Summary")
+    
+    best_idx = df_cal['f1'].idxmax()
+    best_row = df_cal.loc[best_idx]
+    
+    summary_cols = st.columns(4)
+    
+    with summary_cols[0]:
+        st.metric("🎯 Best F1 Score", f"{best_row['f1']:.3f}", 
+                 f"at threshold {best_row['threshold']:.2f}")
+    
+    with summary_cols[1]:
+        st.metric("✅ Peak Precision", f"{df_cal['precision'].max():.3f}",
+                 f"at threshold {df_cal.loc[df_cal['precision'].idxmax(), 'threshold']:.2f}")
+    
+    with summary_cols[2]:
+        st.metric("📊 Peak Recall", f"{df_cal['recall'].max():.3f}",
+                 f"at threshold {df_cal.loc[df_cal['recall'].idxmax(), 'threshold']:.2f}")
+    
+    with summary_cols[3]:
+        st.metric("🔍 Total Pairs", f"{len(st.session_state.duplicates):,}",
+                 f"at current threshold")
 def manager_tab():
-    """Render Duplicate Manager Tab"""
+    """Duplicate manager with deletion queue"""
     if not st.session_state.duplicates:
         st.info("No duplicates found")
         return
     
-    clusters = organize_clusters(st.session_state.duplicates)
+    clustering_mode = st.session_state.get('clustering_mode', 'basename')
+    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
     
     st.info(f"📦 {len(clusters)} groups • {sum(len(c['duplicates']) for c in clusters)} duplicate files")
     
@@ -115,7 +489,7 @@ def manager_tab():
                 pass
             progress_bar.progress((i + 1) / total)
         
-        # Update duplicates list
+        # Update duplicates
         st.session_state.duplicates = [
             d for d in st.session_state.duplicates 
             if os.path.exists(d['file1']) and os.path.exists(d['file2'])
@@ -125,7 +499,7 @@ def manager_tab():
             if os.path.exists(d['file1']) and os.path.exists(d['file2'])
         ]
         
-        st.success(f"✓ Deleted {deleted} files")
+        st.success(f"✔ Deleted {deleted} files")
         st.rerun()
     
     st.markdown("---")
@@ -198,7 +572,7 @@ def manager_tab():
             st.rerun()
 
 def search_tab():
-    """Render Image Search Tab"""
+    """Image search interface"""
     st.markdown("### Image Search")
     
     col_upload, col_settings = st.columns([2, 1])
@@ -207,7 +581,7 @@ def search_tab():
         uploaded = st.file_uploader("Upload image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'])
     
     with col_settings:
-        query_threshold = st.slider("Threshold", 0.60, 0.99, 0.75, 0.01, key="query_thresh")
+        query_threshold = st.slider("Threshold", 0.30, 0.99, 0.75, 0.01, key="query_thresh")
         max_results = st.number_input("Max Results", 1, 100, 50)
     
     if uploaded and st.session_state.detector:
@@ -251,14 +625,15 @@ def search_tab():
         st.info("Run scan to enable search")
 
 def analytics_tab():
-    """Render Analytics Tab"""
+    """Analytics and statistics"""
     st.markdown("### Analytics")
     
     if not st.session_state.duplicates:
         st.info("Run a scan to view analytics")
         return
     
-    clusters = organize_clusters(st.session_state.duplicates)
+    clustering_mode = st.session_state.get('clustering_mode', 'basename')
+    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
     scores = [d['score'] for d in st.session_state.duplicates]
     unique_duplicates = sum(len(c['duplicates']) for c in clusters)
     
@@ -278,24 +653,6 @@ def analytics_tab():
         st.metric("Avg Group Size", f"{avg_size:.1f}")
     
     st.markdown("---")
-    st.markdown("### Original vs Duplicate Comparison")
-    
-    # Count originals vs duplicates
-    originals = set(c['original'] for c in clusters)
-    duplicates_set = set()
-    for c in clusters:
-        for d in c['duplicates']:
-            duplicates_set.add(d['path'])
-    
-    comp_col1, comp_col2 = st.columns(2)
-    with comp_col1:
-        st.metric("Original Files", len(originals))
-    with comp_col2:
-        st.metric("Duplicate Files", len(duplicates_set))
-    
-    st.success(f"✓ System correctly identifies originals and compares them only to duplicates")
-    
-    st.markdown("---")
     st.markdown("### Detailed List")
     
     df_details = pd.DataFrame([
@@ -312,14 +669,13 @@ def analytics_tab():
     st.dataframe(df_details, use_container_width=True, height=400)
 
 def hash_duplicates_tab():
-    """Render Hash-Based Duplicates Tab"""
+    """Hash-based duplicates"""
     st.markdown("### ⚡ Hash-Based Duplicate Detection")
     
     if not st.session_state.detector:
         st.info("Run a scan first to enable hash detection")
         return
     
-    # Display hash duplicates from detector
     if hasattr(st.session_state.detector, 'fast_duplicates') and st.session_state.detector.fast_duplicates:
         hash_dups = st.session_state.detector.fast_duplicates
         
@@ -327,7 +683,6 @@ def hash_duplicates_tab():
         
         st.markdown("---")
         
-        # Group by file pairs
         for i in range(0, len(hash_dups), 3):
             cols = st.columns(3)
             for j, col in enumerate(cols):
@@ -337,14 +692,12 @@ def hash_duplicates_tab():
                         try:
                             st.markdown(f"**Pair {i + j + 1}**")
                             
-                            # Display both images
                             st.image(dup['file1'], caption="File 1", use_container_width=True)
                             st.caption(get_short_path(dup['file1']))
                             
                             st.image(dup['file2'], caption="File 2", use_container_width=True)
                             st.caption(get_short_path(dup['file2']))
                             
-                            # Score badge
                             score_pct = dup['score'] * 100
                             st.markdown(
                                 f'<span class="similarity-badge similarity-high">{score_pct:.0f}%</span>',
@@ -352,12 +705,11 @@ def hash_duplicates_tab():
                             )
                             st.caption(f"Method: {dup['method']}")
                             
-                            # Delete option
                             if st.checkbox(f"Delete File 2", key=f"hash_del_{i+j}"):
                                 if st.button(f"🗑️ Confirm Delete", key=f"hash_confirm_{i+j}", type="primary"):
                                     try:
                                         os.remove(dup['file2'])
-                                        st.success("✓ Deleted")
+                                        st.success("✔ Deleted")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Error: {e}")
@@ -367,12 +719,95 @@ def hash_duplicates_tab():
             if i + 3 < len(hash_dups):
                 st.markdown("---")
     else:
-        st.info("No hash-based duplicates found. These are detected during the scan phase.")
-        st.markdown("""
-        **Hash-based detection** finds:
-        - 🎯 Exact duplicates (pixel-perfect matches)
-        - 📸 Near-exact duplicates (minor compression differences)
-        - 🔍 Very similar images with identical perceptual hashes
+        st.info("No hash-based duplicates found")
+
+def versus_tab():
+    """Compare two images directly"""
+    st.markdown("### ⚔️ Image Comparison")
+    
+    if not st.session_state.detector:
+        st.info("Run a scan first to enable comparison")
+        return
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Image 1**")
+        img1 = st.file_uploader("Upload first image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img1")
+    
+    with col2:
+        st.markdown("**Image 2**")
+        img2 = st.file_uploader("Upload second image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img2")
+    
+    if img1 and img2:
+        # Save temp files
+        temp1 = "temp_img1.jpg"
+        temp2 = "temp_img2.jpg"
         
-        Run a **Full Scan** to populate this tab.
-        """)
+        with open(temp1, "wb") as f:
+            f.write(img1.getbuffer())
+        with open(temp2, "wb") as f:
+            f.write(img2.getbuffer())
+        
+        # Display images
+        col_disp1, col_disp2 = st.columns(2)
+        with col_disp1:
+            st.image(temp1, use_container_width=True)
+        with col_disp2:
+            st.image(temp2, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Compare
+        with st.spinner("Comparing..."):
+            result = st.session_state.detector.compare_two_images(temp1, temp2)
+        
+        if result:
+            similarity_pct = result['similarity'] * 100
+            
+            # Large similarity display
+            st.markdown(f"""
+            <div style='text-align: center; padding: 2rem;'>
+                <h1 style='font-size: 4rem; margin: 0;'>{similarity_pct:.1f}%</h1>
+                <p style='font-size: 1.5rem; color: #94a3b8;'>Similarity</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Metrics
+            col_m1, col_m2, col_m3 = st.columns(3)
+            
+            with col_m1:
+                st.metric("DINOv2 Similarity", f"{result['similarity']:.4f}")
+            
+            with col_m2:
+                if result['hash_distance'] is not None:
+                    st.metric("Hash Distance", result['hash_distance'])
+                else:
+                    st.metric("Hash Distance", "N/A")
+            
+            with col_m3:
+                match_status = "✅ MATCH" if result['match'] else "❌ NO MATCH"
+                st.metric("Status", match_status)
+            
+            # Interpretation
+            st.markdown("---")
+            st.markdown("### Interpretation")
+            
+            if similarity_pct >= 90:
+                st.success("🎯 **Very Similar** - Likely duplicates or minor variations")
+            elif similarity_pct >= 75:
+                st.info("🔵 **Similar** - Related images with noticeable differences")
+            elif similarity_pct >= 60:
+                st.warning("🟡 **Somewhat Similar** - May share some visual elements")
+            else:
+                st.error("🔴 **Different** - Images are quite different")
+            
+            if result['hash_distance'] is not None:
+                if result['hash_distance'] <= 5:
+                    st.success(f"📌 Hash distance: {result['hash_distance']} - Perceptually very similar")
+                elif result['hash_distance'] <= 10:
+                    st.info(f"📌 Hash distance: {result['hash_distance']} - Perceptually similar")
+                else:
+                    st.warning(f"📌 Hash distance: {result['hash_distance']} - Perceptually different")
+        else:
+            st.error("Failed to compare images")

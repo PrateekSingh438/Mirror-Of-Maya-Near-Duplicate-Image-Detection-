@@ -4,29 +4,26 @@ from engine import DuplicateDetector
 from utils import get_image_files
 import config
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB
+os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB if hasattr(config, 'ENV_KMP_DUPLICATE_LIB') else "TRUE"
 
 def get_attack_folders():
-    """
-    Returns a dictionary of { "Category Name": "Full Folder Path" }
-    Combines standard attacks (JPEG) and new Crop attacks.
-    """
+    """Get all attack category folders"""
     folders = {}
     
-    # 1. Add Standard Attacks (JPEG, Strong) from DATASET_PATH
-    for name, relative_path in config.ATTACK_CATEGORIES.items():
-        folders[name] = os.path.join(config.DATASET_PATH, relative_path)
-        
-    # 2. Add Crop Attacks from CROPS_PATH
-    # We check if CROP_CATEGORIES exists to avoid errors if you haven't updated config yet
-    if hasattr(config, 'CROP_CATEGORIES'):
-        for name, relative_path in config.CROP_CATEGORIES.items():
-            folders[name] = os.path.join(config.CROPS_PATH, relative_path)
-            
+    # Standard attacks
+    if hasattr(config, 'ATTACK_CATEGORIES'):
+        for name, rel_path in config.ATTACK_CATEGORIES.items():
+            folders[name] = os.path.join(config.DATASET_PATH, rel_path)
+    
+    # Crop attacks
+    if hasattr(config, 'CROP_CATEGORIES') and hasattr(config, 'CROPS_PATH'):
+        for name, rel_path in config.CROP_CATEGORIES.items():
+            folders[name] = os.path.join(config.CROPS_PATH, rel_path)
+    
     return folders
 
 def evaluate_category(detector, category_name, folder_path):
-   
+    """Evaluate detection on one attack category"""
     if not os.path.exists(folder_path):
         return None, "Folder not found"
 
@@ -36,10 +33,11 @@ def evaluate_category(detector, category_name, folder_path):
 
     tp = 0
     scores = []
+    threshold = getattr(config, 'BENCHMARK_THRESHOLD', 0.75)
 
     for q_path in query_files:
         q_id = os.path.splitext(os.path.basename(q_path))[0]
-        results = detector.find_matches_for_file(q_path, threshold=config.BENCHMARK_THRESHOLD)
+        results = detector.find_matches_for_file(q_path, threshold=threshold)
         
         found = False
         for res in results:
@@ -63,21 +61,24 @@ def evaluate_category(detector, category_name, folder_path):
     }, None
 
 def get_status(recall):
+    """Get status label for recall"""
+    excellent_thresh = getattr(config, 'EXCELLENT_RECALL_THRESHOLD', 0.90)
+    weak_thresh = getattr(config, 'WEAK_RECALL_THRESHOLD', 0.70)
     
-    if recall > config.EXCELLENT_RECALL_THRESHOLD:
+    if recall > excellent_thresh:
         return "EXCELLENT"
-    elif recall < config.WEAK_RECALL_THRESHOLD:
+    elif recall < weak_thresh:
         return "WEAK"
     return "GOOD"
 
 def print_benchmark_header():
-    
+    """Print benchmark table header"""
     print("\n" + "="*65)
     print(f"{'ATTACK CATEGORY':<20} | {'RECALL':<10} | {'AVG SCORE':<10} | {'STATUS'}")
     print("="*65)
 
 def print_benchmark_result(name, result, error):
-   
+    """Print single benchmark result"""
     if error:
         print(f"{name:<20} | {'SKIPPED':<10} | {'N/A':<10} | {error}")
     else:
@@ -85,12 +86,12 @@ def print_benchmark_result(name, result, error):
         print(f"{name:<20} | {result['recall']:.4f}    | {result['avg_score']:.4f}    | {status}")
 
 def run_comprehensive_benchmark():
-    
-    print("Initializing Robust Benchmark...")
+    """Run benchmark on all attack categories"""
+    print("Initializing Benchmark...")
     detector = DuplicateDetector()
     
     original_dir = os.path.join(config.DATASET_PATH, config.ORIGINAL_DIR_NAME)
-    print(f"Indexing Originals from {original_dir}...")
+    print(f"Indexing originals from {original_dir}...")
     detector.bulk_index(original_dir)
     
     print_benchmark_header()

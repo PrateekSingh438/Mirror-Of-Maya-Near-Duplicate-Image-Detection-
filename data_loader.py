@@ -1,8 +1,8 @@
-# Minimal data loader
+"""Minimal data loader utilities"""
 from PIL import Image
-import numpy as np
 
 def load_image(path):
+    """Load image as RGB PIL Image"""
     try:
         return Image.open(path).convert("RGB")
     except:
