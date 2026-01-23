@@ -55,7 +55,6 @@ def apply_custom_css():
             box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
         }
         
-    
         
         @keyframes pulse {
             0%, 100% { opacity: 0.3; transform: translateX(-50%) scale(1); }
@@ -351,7 +350,7 @@ def _render_scan_button():
 
 def _render_session_info():
     st.markdown("---")
-    st.markdown("### Scan Statistics")
+    st.markdown("###Scan Statistics")
     
     if st.session_state.get('scan_stats'):
         stats = st.session_state.scan_stats
