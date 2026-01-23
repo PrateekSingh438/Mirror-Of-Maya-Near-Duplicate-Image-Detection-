@@ -59,8 +59,8 @@ class DuplicateDetector:
         files = list(walk_image_files(folder))
         print(f" Found {len(files)} images")
         
-        # Phase 1: Hash-based fast detection
-        print(f"⚡ Phase 1: Hashing...")
+        #Hash-based fast detection
+        print(f"Phase 1: Hashing...")
         files_for_dino = []
         
         for f in tqdm(files, desc="Hashing"):
@@ -87,7 +87,7 @@ class DuplicateDetector:
                 self.hash_buckets[bucket].append((h, f))
                 files_for_dino.append(f)
         
-        # Phase 2: Embedding-based detection
+        # Phase 2: Embedding
         if files_for_dino:
             print(f" Phase 2: Embedding ({len(files_for_dino)} unique)...")
             batch_vecs = []
@@ -109,10 +109,9 @@ class DuplicateDetector:
                 self.index.add(np.vstack(batch_vecs))
                 self.stored_files.extend(batch_files)
         
-        print(f"✅ Indexed {self.index.ntotal} images")
+        print(f"Indexed {self.index.ntotal} images")
 
     def calibrate_threshold(self, dataset_path):
-        """Calibrate threshold using full path comparison"""
         print(" Calibrating threshold...")
         
         from utils import generate_ground_truth, normalize_pair_fullpath
@@ -129,23 +128,18 @@ class DuplicateDetector:
         best_thresh = config.DEFAULT_THRESHOLD
         history = []
         
-        # Get all duplicates at minimum threshold
         min_thresh = min(config.CALIBRATION_THRESHOLDS)
         all_duplicates = self._find_duplicates_internal(threshold=min_thresh, silent=True)
         
         print(f"\n Found {len(all_duplicates)} pairs at threshold {min_thresh}")
         
-        # Normalize ground truth using FULL PATHS
         gt_set = set(normalize_pair_fullpath(p) for p in gt_pairs)
         
         for thresh in config.CALIBRATION_THRESHOLDS:
-            # Filter by threshold
             filtered = [d for d in all_duplicates if d['score'] >= thresh]
             
-            # Normalize detected pairs using FULL PATHS
             det_set = set(normalize_pair_fullpath((d['file1'], d['file2'])) for d in filtered)
             
-            # Calculate metrics
             tp = len(det_set.intersection(gt_set))
             fp = len(det_set - gt_set)
             fn = len(gt_set - det_set)
@@ -230,7 +224,6 @@ class DuplicateDetector:
         return self._find_duplicates_internal(t)
     
     def find_matches_for_file(self, file_path, threshold=None, top_k=50):
-        """Find matches for single file"""
         threshold = threshold or self.optimal_threshold
         
         vec = self._generate_embedding(file_path)
@@ -251,7 +244,6 @@ class DuplicateDetector:
         return results
     
     def compare_two_images(self, img1_path, img2_path):
-        """Compare two specific images"""
         vec1 = self._generate_embedding(img1_path)
         vec2 = self._generate_embedding(img2_path)
         

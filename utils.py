@@ -4,38 +4,30 @@ from collections import defaultdict
 import config
 
 def walk_image_files(folder):
-    """Recursively walk and yield image file paths"""
     for root, _, files in os.walk(folder):
         for f in files:
             if f.lower().endswith(config.SUPPORTED_EXTENSIONS):
                 yield os.path.join(root, f)
 
 def normalize_pair_fullpath(pair):
-    """
-    Normalize pair using BASENAMES ONLY for COPYDAYS-style datasets.
-    This fixes the F1 score issue by matching based on image identity, not path.
-    """
     b1 = os.path.splitext(os.path.basename(pair[0]))[0]
     b2 = os.path.splitext(os.path.basename(pair[1]))[0]
     return tuple(sorted((b1, b2)))
 
 def is_original_file(filepath):
-    """Check if file is in 'original' folder"""
     normalized = filepath.replace('\\', '/')
     return 'original' in normalized.lower().split('/')
 
 def get_basename_without_ext(filepath):
-    """Get basename without extension"""
     return os.path.splitext(os.path.basename(filepath))[0]
 
 def generate_ground_truth(dataset_path):
-    """Generate ground truth: original -> attack pairs"""
     files = list(walk_image_files(dataset_path))
     
     originals = {}
     attacks = defaultdict(list)
     
-    print(f"\n🔍 Analyzing {len(files)} files...")
+    print(f"\nAnalyzing {len(files)} files...")
     
     for f in files:
         basename = get_basename_without_ext(f)
@@ -52,12 +44,11 @@ def generate_ground_truth(dataset_path):
             for attack_path in attacks[basename]:
                 pairs.append((original_path, attack_path))
     
-    print(f"📊 Ground Truth: {len(originals)} originals, {len(pairs)} pairs")
+    print(f"Ground Truth: {len(originals)} originals, {len(pairs)} pairs")
     
     return pairs
 
 def organize_clusters(duplicates, mode="basename"):
-    """Organize duplicates into clusters"""
     if not duplicates:
         return []
     
@@ -67,7 +58,6 @@ def organize_clusters(duplicates, mode="basename"):
         return _cluster_by_graph(duplicates)
 
 def _cluster_by_basename(duplicates):
-    """Conservative: Only cluster same basename"""
     basename_groups = defaultdict(lambda: {'files': set(), 'pairs': []})
     
     for dup in duplicates:
@@ -75,7 +65,7 @@ def _cluster_by_basename(duplicates):
         b1 = get_basename_without_ext(f1)
         b2 = get_basename_without_ext(f2)
         
-        # Only process matching basenames
+        #matching basenames
         if b1 == b2:
             basename_groups[b1]['files'].add(f1)
             basename_groups[b1]['files'].add(f2)
@@ -88,7 +78,7 @@ def _cluster_by_basename(duplicates):
         if len(files) < 2:
             continue
         
-        # Build graph for this basename
+        # Build graph
         G = nx.Graph()
         for dup in data['pairs']:
             G.add_edge(dup['file1'], dup['file2'], weight=dup['score'])
@@ -102,7 +92,6 @@ def _cluster_by_basename(duplicates):
     return sorted(clusters, key=lambda x: len(x['duplicates']), reverse=True)
 
 def _cluster_by_graph(duplicates):
-    """Aggressive: Cluster all similar images"""
     G = nx.Graph()
     
     for d in duplicates:
@@ -126,8 +115,6 @@ def _cluster_by_graph(duplicates):
     return sorted(clusters, key=lambda x: len(x['duplicates']), reverse=True)
 
 def _select_original(candidates, graph):
-    """Select best original from candidates"""
-    # Prefer files in 'original' folder
     for c in candidates:
         if is_original_file(c):
             return c
@@ -142,19 +129,16 @@ def _select_original(candidates, graph):
     
     if scores:
         return max(scores.items(), key=lambda x: x[1])[0]
-    
-    # Shortest filename
     return min(candidates, key=lambda x: len(os.path.basename(x)))
 
 def _get_duplicates_from_graph(files, original, graph):
-    """Get duplicates list with scores"""
     dups_list = []
     
     for node in files:
         if node == original:
             continue
         
-        # Get score
+
         if graph.has_edge(original, node):
             score = graph[original][node]['weight']
         else:
@@ -172,7 +156,6 @@ def _get_duplicates_from_graph(files, original, graph):
     return sorted(dups_list, key=lambda x: x['score'], reverse=True)
 
 def get_dir_size(path):
-    """Get directory size in MB"""
     total = 0
     try:
         for f in walk_image_files(path):
@@ -182,7 +165,6 @@ def get_dir_size(path):
     return total / (1024 * 1024)
 
 def calculate_wasted_space(duplicates):
-    """Calculate wasted space from duplicates in MB"""
     seen = set()
     total = 0
     
@@ -197,7 +179,6 @@ def calculate_wasted_space(duplicates):
     return total / (1024 * 1024)
 
 def format_file_size(bytes_size):
-    """Format bytes to human readable"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if bytes_size < 1024.0:
             return f"{bytes_size:.2f} {unit}"
@@ -205,5 +186,4 @@ def format_file_size(bytes_size):
     return f"{bytes_size:.2f} PB"
 
 def get_image_files(folder):
-    """Get list of image files"""
     return list(walk_image_files(folder))

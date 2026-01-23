@@ -10,7 +10,6 @@ from session_manager import initialize_session_state, load_session_state
 st.set_page_config(
     page_title="Mirror of Maya", 
     layout=config.LAYOUT, 
-    page_icon="🔍",
     initial_sidebar_state="expanded"
 )
 

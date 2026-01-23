@@ -63,10 +63,7 @@ def recalculate_metrics(threshold):
     
     from utils import normalize_pair_fullpath
     
-    # Filter by threshold
     filtered = [d for d in st.session_state.all_duplicates if d['score'] >= threshold]
-    
-    # Use FULL PATHS for comparison
     det_set = set(normalize_pair_fullpath((d['file1'], d['file2'])) for d in filtered)
     gt_set = set(normalize_pair_fullpath(p) for p in st.session_state.ground_truth)
     

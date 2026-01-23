@@ -55,7 +55,6 @@ def apply_custom_css():
             box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
         }
         
-    
         
         @keyframes pulse {
             0%, 100% { opacity: 0.3; transform: translateX(-50%) scale(1); }
@@ -264,7 +263,7 @@ def render_sidebar():
         _render_dataset_config()
         
         st.markdown("---")
-        st.markdown("### ⚡ ACTIONS")
+        st.markdown("### SACRED ACTIONS")
         
         _render_scan_button()
         _render_session_info()
@@ -295,7 +294,7 @@ def _render_dataset_config():
             dir_size = get_dir_size(dataset_path)
             st.success(f"✓ {dir_size:.1f} MB of digital souls indexed")
         else:
-            st.error("❌ Repository not found in this realm")
+            st.error("Repository not found in this realm")
 
 def _render_scan_button():
     if st.button("SCAN DATABASE", type="primary", width='stretch'):
@@ -306,7 +305,7 @@ def _render_scan_button():
         else:
             start_time = datetime.now()
             
-            with st.spinner("🔮 Summoning the Model..."):
+            with st.spinner("Summoning the Model..."):
                 config.MODEL_ID = st.session_state.selected_model
                 detector = DuplicateDetector()
             
@@ -314,7 +313,7 @@ def _render_scan_button():
                 detector.bulk_index(dataset_path)
                 st.session_state.detector = detector
             
-            with st.spinner("⚖️ Calibrating divine discernment..."):
+            with st.spinner("Calibrating divine discernment..."):
                 thresh, f1, history, gt_pairs = detector.calibrate_threshold(dataset_path)
                 st.session_state.optimal_thresh = thresh
                 st.session_state.f1_score = f1
@@ -322,7 +321,7 @@ def _render_scan_button():
                 st.session_state.current_slider_val = thresh
                 st.session_state.ground_truth = gt_pairs
             
-            with st.spinner("🔍 Piercing the veil of illusions..."):
+            with st.spinner("Piercing the veil of illusions..."):
                 min_thresh = min(config.CALIBRATION_THRESHOLDS)
                 all_dups = detector.find_duplicates(threshold=min_thresh)
                 st.session_state.all_duplicates = all_dups
@@ -346,12 +345,12 @@ def _render_scan_button():
             }
             
             save_session_state()
-            st.success(f"✨ Divine revelation complete! Discernment: {f1:.1%}")
+            st.success(f"Divine revelation complete! Discernment: {f1:.1%}")
             st.rerun()
 
 def _render_session_info():
     st.markdown("---")
-    st.markdown("### 📊 Scan Statistics")
+    st.markdown("###Scan Statistics")
     
     if st.session_state.get('scan_stats'):
         stats = st.session_state.scan_stats
@@ -366,7 +365,7 @@ def _render_session_info():
         st.info("Awaiting first scan")
 
 def render_threshold_control():
-    st.markdown("### 🎚️ Chakra Precision Control")
+    st.markdown("### Chakra Precision Control")
     st.markdown("*Adjust the sharpness of divine discernment*")
     
     col_slider, col_metrics = st.columns([2, 2])

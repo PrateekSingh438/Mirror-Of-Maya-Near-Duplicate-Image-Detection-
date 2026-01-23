@@ -5,11 +5,10 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # System
 PAGE_TITLE = "Mirror of Maya"
-PAGE_ICON = "🔍"
 LAYOUT = "wide"
 
 # Model
-DEFAULT_MODEL_ID = "facebook/dinov2-base"
+DEFAULT_MODEL_ID = "facebook/dinov2-small"
 MODEL_ID = DEFAULT_MODEL_ID
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 32

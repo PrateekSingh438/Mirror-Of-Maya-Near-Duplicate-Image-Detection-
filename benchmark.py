@@ -7,7 +7,6 @@ import config
 os.environ["KMP_DUPLICATE_LIB_OK"] = config.ENV_KMP_DUPLICATE_LIB if hasattr(config, 'ENV_KMP_DUPLICATE_LIB') else "TRUE"
 
 def get_attack_folders():
-    """Get all attack category folders"""
     folders = {}
     
     # Standard attacks
@@ -23,7 +22,6 @@ def get_attack_folders():
     return folders
 
 def evaluate_category(detector, category_name, folder_path):
-    """Evaluate detection on one attack category"""
     if not os.path.exists(folder_path):
         return None, "Folder not found"
 
@@ -61,7 +59,6 @@ def evaluate_category(detector, category_name, folder_path):
     }, None
 
 def get_status(recall):
-    """Get status label for recall"""
     excellent_thresh = getattr(config, 'EXCELLENT_RECALL_THRESHOLD', 0.90)
     weak_thresh = getattr(config, 'WEAK_RECALL_THRESHOLD', 0.70)
     
@@ -72,13 +69,11 @@ def get_status(recall):
     return "GOOD"
 
 def print_benchmark_header():
-    """Print benchmark table header"""
     print("\n" + "="*65)
     print(f"{'ATTACK CATEGORY':<20} | {'RECALL':<10} | {'AVG SCORE':<10} | {'STATUS'}")
     print("="*65)
 
 def print_benchmark_result(name, result, error):
-    """Print single benchmark result"""
     if error:
         print(f"{name:<20} | {'SKIPPED':<10} | {'N/A':<10} | {error}")
     else:
@@ -86,7 +81,6 @@ def print_benchmark_result(name, result, error):
         print(f"{name:<20} | {result['recall']:.4f}    | {result['avg_score']:.4f}    | {status}")
 
 def run_comprehensive_benchmark():
-    """Run benchmark on all attack categories"""
     print("Initializing Benchmark...")
     detector = DuplicateDetector()
     
