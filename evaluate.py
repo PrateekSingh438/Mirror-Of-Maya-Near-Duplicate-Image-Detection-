@@ -36,7 +36,6 @@ def run_evaluation_search(model_name, distance_metric, base_path=config.BASE_PAT
 
     # 6. Perform search
     print(f"Performing search for {len(query_ids)} queries...")
-    # matches is a list of tuples: (query_id, result_id, score)
     raw_matches = search_engine.batch_search(query_ids, top_k=config.TOP_K)
 
     return raw_matches, ground_truth_mapping, embeddings, image_ids

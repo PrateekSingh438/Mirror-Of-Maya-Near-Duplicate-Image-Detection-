@@ -28,7 +28,7 @@ def dashboard_tab():
         <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%); 
                    -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
                    font-size: 2.5rem; font-weight: 800;'>
-            ⚡ Mirror Of Maya: Digital Discernment Engine
+            Mirror Of Maya: Digital Discernment Engine
         </h2>
         <p style='color: #94a3b8; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
     </div>
@@ -85,8 +85,8 @@ def dashboard_tab():
     if st.session_state.calibration_history:
         df_cal = pd.DataFrame(st.session_state.calibration_history)
         
-        # Create tabs for different visualizations
-        viz_tabs = st.tabs(["🎯 Calibration Curves", "🌊 Score Distribution", "⚡ Detection Insights"])
+        #tabs for different visualizations
+        viz_tabs = st.tabs(["Calibration Curves", "Score Distribution", "Detection Insights"])
         
         with viz_tabs[0]:
             _render_calibration_curves(df_cal)
@@ -107,7 +107,7 @@ def _render_calibration_curves(df_cal):
     with col_chart:
         fig = go.Figure()
         
-        # F1 Score - The balance
+        # F1 Score
         fig.add_trace(go.Scatter(
             x=df_cal['threshold'], 
             y=df_cal['f1'],
@@ -128,7 +128,7 @@ def _render_calibration_curves(df_cal):
             line_dash="solid",
             line_color="#10b981",
             line_width=2,
-            annotation_text=f"⚡ Optimal: {optimal_thresh:.2f}",
+            annotation_text=f"Optimal: {optimal_thresh:.2f}",
             annotation_position="top"
         )
         
@@ -161,7 +161,7 @@ def _render_calibration_curves(df_cal):
         st.plotly_chart(fig, width='stretch')
     
     with col_table:
-        st.markdown("**📈 Performance Metrics**")
+        st.markdown("**Performance Metrics**")
         st.dataframe(
             df_cal[["threshold", "f1"]]
             .style.highlight_max(axis=0, subset=["f1"])
@@ -176,14 +176,14 @@ def _render_calibration_curves(df_cal):
 
 def _render_score_distribution():
     """Render similarity score distributions"""
-    st.markdown("### 🌊 The Spectrum of Resemblance")
+    st.markdown("### The Spectrum of Resemblance")
     st.markdown("*How similar are the detected avatars to their originals?*")
     
     scores = [d['score'] for d in st.session_state.duplicates]
     
     col1, col2 = st.columns(2)
     
-    # Histogram - full width
+    # Histogram
     fig = go.Figure()
     
     fig.add_trace(go.Histogram(
@@ -196,7 +196,7 @@ def _render_score_distribution():
         hovertemplate='<b>Score Range:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>'
     ))
     
-    # Add threshold line
+    #Threshold
     fig.add_vline(
         x=st.session_state.current_slider_val,
         line_dash="dash",
@@ -225,7 +225,7 @@ def _render_detection_insights(df_cal):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Detection count vs threshold
+        # Detection 
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
@@ -249,9 +249,6 @@ def _render_detection_insights(df_cal):
         )
         
         st.plotly_chart(fig, width='stretch')
-    
-    with col2:
-        # Method breakdown
         methods = {}
         for d in st.session_state.duplicates:
             method = d.get('method', 'Unknown')
@@ -278,7 +275,7 @@ def _render_detection_insights(df_cal):
     
     # Performance summary
     st.markdown("---")
-    st.markdown("### 📋 Mirror of Maya Performance Summary")
+    st.markdown("### Mirror of Maya Performance Summary")
     
     best_idx = df_cal['f1'].idxmax()
     best_row = df_cal.loc[best_idx]
@@ -286,19 +283,19 @@ def _render_detection_insights(df_cal):
     summary_cols = st.columns(4)
     
     with summary_cols[0]:
-        st.metric("🎯 Best F1 Score", f"{best_row['f1']:.3f}", 
+        st.metric("Best F1 Score", f"{best_row['f1']:.3f}", 
                  f"at threshold {best_row['threshold']:.2f}")
     
     with summary_cols[1]:
-        st.metric("✅ Peak Precision", f"{df_cal['precision'].max():.3f}",
+        st.metric("Peak Precision", f"{df_cal['precision'].max():.3f}",
                  f"at threshold {df_cal.loc[df_cal['precision'].idxmax(), 'threshold']:.2f}")
     
     with summary_cols[2]:
-        st.metric("📊 Peak Recall", f"{df_cal['recall'].max():.3f}",
+        st.metric("Peak Recall", f"{df_cal['recall'].max():.3f}",
                  f"at threshold {df_cal.loc[df_cal['recall'].idxmax(), 'threshold']:.2f}")
     
     with summary_cols[3]:
-        st.metric("🔍 Total Pairs", f"{len(st.session_state.duplicates):,}",
+        st.metric("Total Pairs", f"{len(st.session_state.duplicates):,}",
                  f"at current threshold")
 def manager_tab():
     """Duplicate manager with deletion queue"""
@@ -309,23 +306,23 @@ def manager_tab():
     clustering_mode = st.session_state.get('clustering_mode', 'basename')
     clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
     
-    st.info(f"📦 {len(clusters)} groups • {sum(len(c['duplicates']) for c in clusters)} duplicate files")
+    st.info(f"{len(clusters)} groups • {sum(len(c['duplicates']) for c in clusters)} duplicate files")
     
     # Actions
     col1, col2, col3 = st.columns(3)
     
-    if col1.button("✅ Select All", width='stretch'):
+    if col1.button("Select All", width='stretch'):
         for c in clusters:
             for d in c['duplicates']:
                 st.session_state.deletion_queue.add(d['path'])
         st.rerun()
     
-    if col2.button("❌ Clear", width='stretch'):
+    if col2.button("Clear", width='stretch'):
         st.session_state.deletion_queue.clear()
         st.rerun()
     
     if st.session_state.deletion_queue and col3.button(
-        f"🗑️ Delete ({len(st.session_state.deletion_queue)})",
+        f"Delete ({len(st.session_state.deletion_queue)})",
         type="primary",
         width='stretch'
     ):
@@ -387,11 +384,9 @@ def manager_tab():
                         score_pct = dup['score'] * 100
                         badge_class = get_similarity_class(dup['score'])
                         
-                        # Read and encode image
                         with open(dup['path'], 'rb') as img_file:
                             img_data = base64.b64encode(img_file.read()).decode()
                         
-                        # Determine color based on similarity class
                         if badge_class == 'similarity-high':
                             color = '#10b981'
                             bg_color = 'rgba(16, 185, 129, 0.9)'
@@ -433,7 +428,6 @@ def manager_tab():
             
             st.markdown("---")
     
-    # Pagination controls
     col_prev, col_center, col_next = st.columns([1, 2, 1])
     
     with col_prev:
@@ -450,7 +444,6 @@ def manager_tab():
             st.rerun()
 
 def search_tab():
-    """Image search interface"""
     st.markdown("### Image Search")
     
     col_upload, col_settings = st.columns([2, 1])
@@ -503,7 +496,6 @@ def search_tab():
         st.info("Run scan to enable search")
 
 def analytics_tab():
-    """Analytics and statistics"""
     st.markdown("### Analytics")
     
     if not st.session_state.duplicates:
@@ -547,8 +539,7 @@ def analytics_tab():
     st.dataframe(df_details, width='stretch', height=400)
 
 def hash_duplicates_tab():
-    """Hash-based duplicates"""
-    st.markdown("### ⚡ Hash-Based Duplicate Detection")
+    st.markdown("###Hash-Based Duplicate Detection")
     
     if not st.session_state.detector:
         st.info("Run a scan first to enable hash detection")
@@ -557,7 +548,7 @@ def hash_duplicates_tab():
     if hasattr(st.session_state.detector, 'fast_duplicates') and st.session_state.detector.fast_duplicates:
         hash_dups = st.session_state.detector.fast_duplicates
         
-        st.success(f"⚡ Found {len(hash_dups)} exact/near-exact duplicates via perceptual hashing")
+        st.success(f"Found {len(hash_dups)} exact/near-exact duplicates via perceptual hashing")
         
         st.markdown("---")
         
@@ -600,8 +591,7 @@ def hash_duplicates_tab():
         st.info("No hash-based duplicates found")
 
 def versus_tab():
-    """Compare two images directly"""
-    st.markdown("### ⚔️ Image Comparison")
+    st.markdown("### Image Comparison")
     
     if not st.session_state.detector:
         st.info("Run a scan first to enable comparison")
@@ -664,7 +654,7 @@ def versus_tab():
                     st.metric("Hash Distance", "N/A")
             
             with col_m3:
-                match_status = "✅ MATCH" if result['match'] else "❌ NO MATCH"
+                match_status = "MATCH" if result['match'] else "NO MATCH"
                 st.metric("Status", match_status)
             
             # Interpretation
@@ -672,20 +662,20 @@ def versus_tab():
             st.markdown("### Interpretation")
             
             if similarity_pct >= 90:
-                st.success("🎯 **Very Similar** - Likely duplicates or minor variations")
+                st.success("**Very Similar** - Likely duplicates or minor variations")
             elif similarity_pct >= 75:
-                st.info("🔵 **Similar** - Related images with noticeable differences")
+                st.info("**Similar** - Related images with noticeable differences")
             elif similarity_pct >= 60:
-                st.warning("🟡 **Somewhat Similar** - May share some visual elements")
+                st.warning("**Somewhat Similar** - May share some visual elements")
             else:
-                st.error("🔴 **Different** - Images are quite different")
+                st.error("**Different** - Images are quite different")
             
             if result['hash_distance'] is not None:
                 if result['hash_distance'] <= 5:
-                    st.success(f"📌 Hash distance: {result['hash_distance']} - Perceptually very similar")
+                    st.success(f"Hash distance: {result['hash_distance']} - Perceptually very similar")
                 elif result['hash_distance'] <= 10:
-                    st.info(f"📌 Hash distance: {result['hash_distance']} - Perceptually similar")
+                    st.info(f"Hash distance: {result['hash_distance']} - Perceptually similar")
                 else:
-                    st.warning(f"📌 Hash distance: {result['hash_distance']} - Perceptually different")
+                    st.warning(f"Hash distance: {result['hash_distance']} - Perceptually different")
         else:
             st.error("Failed to compare images")
