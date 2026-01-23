@@ -14,6 +14,6 @@ frontend2
 diagnose.py
 indexes/
 session_state.json
-.jpg
+*.jpg
 diagnostic_check.py
 indexes/

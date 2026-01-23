@@ -55,16 +55,7 @@ def apply_custom_css():
             box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
         }
         
-        [data-testid="stSidebar"]::before {
-            content: "";
-            position: absolute;
-            top: 1rem;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 3rem;
-            opacity: 0.3;
-            animation: pulse 3s ease-in-out infinite;
-        }
+    
         
         @keyframes pulse {
             0%, 100% { opacity: 0.3; transform: translateX(-50%) scale(1); }
@@ -266,7 +257,7 @@ def render_header():
 
 def render_sidebar():
     with st.sidebar:
-        st.markdown("### DIVINE CONTROLS")
+        st.markdown("### CONTROLS")
         st.markdown("---")
         
         _render_model_selection()
@@ -307,7 +298,7 @@ def _render_dataset_config():
             st.error("Repository not found in this realm")
 
 def _render_scan_button():
-    if st.button("INVOKE CHAKRA", type="primary", width='stretch'):
+    if st.button("SCAN DATABASE", type="primary", width='stretch'):
         dataset_path = st.session_state.get('dataset_path_input', config.DATASET_PATH)
         
         if not os.path.exists(dataset_path):
@@ -319,7 +310,7 @@ def _render_scan_button():
                 config.MODEL_ID = st.session_state.selected_model
                 detector = DuplicateDetector()
             
-            with st.spinner("Indexing digital souls..."):
+            with st.spinner("Scanning database..."):
                 detector.bulk_index(dataset_path)
                 st.session_state.detector = detector
             
@@ -360,7 +351,7 @@ def _render_scan_button():
 
 def _render_session_info():
     st.markdown("---")
-    st.markdown("### Oracle's Memory")
+    st.markdown("### Scan Statistics")
     
     if st.session_state.get('scan_stats'):
         stats = st.session_state.scan_stats
@@ -372,7 +363,7 @@ def _render_session_info():
             timestamp = datetime.fromisoformat(stats['timestamp'])
             st.caption(f"Last invocation: {timestamp.strftime('%Y-%m-%d %H:%M')}")
     else:
-        st.info("The Chakra awaits its first invocation")
+        st.info("Awaiting first scan")
 
 def render_threshold_control():
     st.markdown("### Chakra Precision Control")
