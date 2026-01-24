@@ -1,4 +1,4 @@
-# Mirror of Maya v3.0: Production Near-Duplicate Detection
+# Mirror of Maya v3.0:Near-Duplicate Detection
 
 Advanced near-duplicate image detection system powered by DINOv2 vision transformers and perceptual hashing, designed for production-scale image deduplication workflows.
 
@@ -387,3 +387,4 @@ See `requirements.txt` for complete dependency list.
 - Facebook Research for FAISS vector search library
 - Streamlit for the interactive application framework
 - INRIA for the COPYDAYS benchmark dataset
+
