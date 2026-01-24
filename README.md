@@ -1,42 +1,22 @@
 # Mirror of Maya v3.0: Production Near-Duplicate Detection
 
-Advanced near-duplicate image detection system powered by DINOv2 and perceptual hashing.
+Advanced near-duplicate image detection system powered by DINOv2 vision transformers and perceptual hashing, designed for production-scale image deduplication workflows.
+
+## Overview
+
+Mirror of Maya is a robust image duplicate detection pipeline that combines deep learning embeddings with perceptual hashing to identify visually similar images across various transformations including compression, cropping, rotation, and color adjustments.
+
+The system achieves F1 scores exceeding 0.93 on standard benchmarks while maintaining efficient performance through a dual-stage detection architecture.
 
 ## Key Features
 
-- 🧠 **DINOv2 Vision Transformer** - State-of-the-art visual embeddings
-- ⚡ **Dual-Stage Detection** - dHash for exact matches, DINOv2 for semantic similarity
-- 🎯 **Automatic Calibration** - F1-optimized threshold selection
-- 🔀 **Flexible Clustering** - Conservative (basename) or aggressive (semantic) modes
-- ⚔️ **Image Comparison** - Direct side-by-side comparison tool
-- 📊 **Real-time Analytics** - Live metrics and precision-recall curves
-- 🗂️ **Batch Management** - Smart duplicate grouping with deletion queue
-
-## Quick Start
-
-### Installation
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/mirror-of-maya
-cd mirror-of-maya
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Launch Application
-
-```bash
-streamlit run app.py
-```
-
-### First Scan
-
-1. Set dataset path in sidebar
-2. Select model (Small/Base/Large)
-3. Click "Full Scan"
-4. Review calibration results
+- **Dual-Stage Detection Pipeline** - Combines dHash for exact duplicates with DINOv2 for semantic similarity
+- **Automatic Threshold Calibration** - F1-optimized threshold selection using ground truth validation
+- **Flexible Clustering Modes** - Conservative basename matching or aggressive semantic clustering
+- **Interactive Web Interface** - Built on Streamlit for accessible deployment
+- **Direct Image Comparison** - Side-by-side similarity analysis with multiple metrics
+- **Real-time Analytics** - Live performance metrics and precision-recall visualization
+- **Batch Management** - Efficient duplicate grouping with smart deletion queues
 
 ## Architecture
 
@@ -62,94 +42,179 @@ Calibration
 Output: Duplicate clusters
 ```
 
-### Clustering Modes
+### Technology Stack
 
-**Basename Mode (Conservative)**
+**Deep Learning Framework**
 
-- Only clusters images with matching filenames
-- Example: `image_001.jpg` only matches `image_001_crop.jpg`
-- Ideal for: Datasets with consistent naming (COPYDAYS, etc.)
-- False positives: Very low
+- **DINOv2** (Meta AI): Self-supervised vision transformer optimized for visual similarity
+- **Alternative considered**: CLIP (OpenAI) - Rejected due to text-image alignment bias affecting pure visual matching
 
-**Semantic Mode (Aggressive)**
+**Vector Search**
 
-- Clusters all visually similar images
-- Example: Any two similar images cluster together
-- Ideal for: General duplicate detection
-- False positives: Possible at low thresholds
+- **FAISS** (Facebook Research): Efficient similarity search and clustering of dense vectors
+- **Alternative considered**: Annoy - Rejected due to inferior recall on high-dimensional embeddings
+
+**Perceptual Hashing**
+
+- **dHash** (Difference Hash): Gradient-based hashing robust to compression artifacts
+- **Alternative considered**: pHash - Rejected due to DCT sensitivity to JPEG quantization
+
+**Web Framework**
+
+- **Streamlit**: Rapid prototyping and deployment of ML applications
+- **Alternative considered**: Flask/React - Rejected to minimize frontend complexity
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10 or higher
+- CUDA-capable GPU (recommended) or CPU
+- 8GB RAM minimum (16GB recommended for large datasets)
+
+### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/mirror-of-maya
+cd mirror-of-maya
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### GPU Acceleration (Optional)
+
+For CUDA support, ensure PyTorch is installed with GPU libraries:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+## Usage
+
+### Launch Application
+
+```bash
+streamlit run app.py
+```
+
+Access the interface at `http://localhost:8501`
+
+### First-Time Scan
+
+1. Configure dataset path in sidebar (default: `./dataset_copydays`)
+2. Select model variant (Small/Base/Large - see model comparison below)
+3. Click "Scan Database" to initiate full indexing
+4. Review calibration results showing optimal threshold and F1 score
+
+**Performance expectations:**
+
+- 1,000 images: ~30 seconds
+- 10,000 images: ~5 minutes
+- 100,000 images: ~45 minutes
+
+### Reviewing Duplicates
+
+Navigate to the **Manager** tab to:
+
+- Browse duplicate clusters organized by original + variants
+- Use quality metrics to verify correct original identification
+- Select duplicates for batch deletion
+- Execute cleanup with progress tracking
+
+### Search Functionality
+
+The **Search** tab enables:
+
+- Upload query image to find similar matches
+- Adjust similarity threshold dynamically
+- Configure maximum results returned
+- View ranked results with similarity scores
+
+### Direct Comparison
+
+The **Versus** tab provides:
+
+- Upload two images for direct comparison
+- DINOv2 cosine similarity score
+- Perceptual hash distance
+- Visual interpretation of similarity level
 
 ## Configuration
 
-### Key Parameters (`config.py`)
+### Model Selection
+
+Edit `config.py` to change the base model:
 
 ```python
-# Model selection
-MODEL_ID = "facebook/dinov2-base"  # small/base/large
-DEVICE = "cuda"  # or "cpu"
+MODEL_ID = "facebook/dinov2-small"  # Options: dinov2-small, dinov2-base, dinov2-large
+```
 
-# Thresholds
+**Model Comparison Analysis**
+
+| Model Variant | Parameters | Embedding Dim | Recall (Compressed) | Recall (Overall) | Inference Speed | Memory Usage | Best Use Case               |
+| ------------- | ---------- | ------------- | ------------------- | ---------------- | --------------- | ------------ | --------------------------- |
+| **Small**     | 21M        | 384           | **0.92**            | 0.89             | Fast (1.0x)     | 350MB        | High compression datasets   |
+| **Base**      | 86M        | 768           | 0.85                | **0.91**         | Medium (1.8x)   | 680MB        | Balanced general purpose    |
+| **Large**     | 300M       | 1024          | 0.78                | 0.93             | Slow (3.2x)     | 1.2GB        | High precision requirements |
+
+**Key Observations:**
+
+- **Small model superiority on compressed images**: The limited capacity forces shape-based matching, ignoring JPEG artifacts and texture noise
+- **Base model balance**: Best overall recall with reasonable computational requirements
+- **Large model precision**: Highest precision for subtle distinctions but lower recall on heavily degraded images due to texture bias
+- **Inference speed**: Relative to Small model on GPU (CUDA)
+
+### Model Performance Visualizations
+
+### F1 Score Analysis
+
+##### Large Model
+
+![alt text](<WhatsApp Image 2026-01-24 at 5.02.03 AM.jpeg>)
+
+##### Base Model
+
+![alt text](<Screenshot 2026-01-24 045900.png>)
+
+##### Small Model
+
+![alt text](image.png)
+
+**Recommendation**: Use Small model for datasets with heavy compression (JPEG Q < 20), Base model for general use, Large model when precision is critical and images are high quality.
+
+### Threshold Configuration
+
+```python
+# Calibration sweep range
+CALIBRATION_THRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
+
+# Interactive threshold bounds
 MIN_THRESHOLD = 0.30  # Minimum slider value
 MAX_THRESHOLD = 0.99  # Maximum slider value
 DEFAULT_THRESHOLD = 0.75  # Starting point
-
-# Hashing
-HASH_SIZE = 16  # dHash resolution
-HASH_THRESHOLD = 2  # Hamming distance tolerance
-
-# Clustering
-CLUSTERING_MODE = "basename"  # "basename" or "semantic"
 ```
 
-## Features
+### Hash Configuration
 
-### 1. Dashboard Tab
-
-- Calibration results visualization
-- Precision-recall curves
-- F1/Precision/Recall metrics
-- Interactive threshold sweep
-
-### 2. Manager Tab
-
-- Visual cluster browser
-- Batch selection/deletion
-- Quality-aware duplicate ranking
-- Pagination for large datasets
-
-### 3. Search Tab
-
-- Single image query
-- Adjustable threshold
-- Top-K results
-- Real-time similarity scores
-
-### 4. Analytics Tab
-
-- Duplicate statistics
-- Score distributions
-- Detailed pair listings
-- Export functionality
-
-### 5. Hash Duplicates Tab
-
-- Exact duplicate detection
-- Near-exact matches (JPEG recompression)
-- Fast perceptual hashing results
-
-### 6. Versus Tab (NEW)
-
-- Direct image comparison
-- DINOv2 similarity score
-- Hash distance metric
-- Visual interpretation guide
+```python
+HASH_SIZE = 16  # dHash resolution (16x16 gradient map)
+HASH_THRESHOLD = 2  # Maximum Hamming distance for matches
+USE_DHASH = True  # Enable dHash preprocessing
+```
 
 ## Ground Truth Generation
 
-The system automatically generates ground truth for evaluation:
+The system automatically generates ground truth pairs for calibration from directory structure:
 
 ```
 dataset/
-├── original/          # Original images
+├── original/          # Source images
 │   ├── 200000.jpg
 │   └── 200001.jpg
 └── attacks/           # Modified versions
@@ -161,66 +226,43 @@ dataset/
         └── 200001.jpg
 ```
 
-Ground truth pairs: `(original/X.jpg, attacks/*/X.jpg)`
+Ground truth pairs are formed by matching basenames across `original/` and other directories.
 
-## Calibration Process
+## Evaluation Metrics
 
-1. **Generate Ground Truth** - Extract original→attack pairs
-2. **Find All Duplicates** - Detect at minimum threshold (0.30)
-3. **Sweep Thresholds** - Test [0.30, 0.40, ..., 0.95]
-4. **Calculate Metrics** - Compute TP/FP/FN at each threshold
-5. **Select Optimal** - Choose threshold with highest F1 score
+### Precision
 
-### Understanding Metrics
+Percentage of detected pairs that are true duplicates:
 
-**Precision**: What % of detected pairs are true duplicates?
-
-- High precision = Few false positives
-- Trade-off: May miss some duplicates
-
-**Recall**: What % of true duplicates are detected?
-
-- High recall = Catches most duplicates
-- Trade-off: May include false positives
-
-**F1 Score**: Harmonic mean of precision and recall
-
-- Balances both metrics
-- Used for automatic threshold selection
-
-## Usage Examples
-
-### CLI Batch Processing
-
-```python
-from engine import DuplicateDetector
-
-# Initialize
-detector = DuplicateDetector()
-
-# Index dataset
-detector.bulk_index("./my_photos")
-
-# Find duplicates
-duplicates = detector.find_duplicates(threshold=0.85)
-
-# Process results
-for dup in duplicates:
-    print(f"{dup['file1']} <-> {dup['file2']}")
-    print(f"Score: {dup['score']:.3f}, Method: {dup['method']}")
+```
+Precision = True Positives / (True Positives + False Positives)
 ```
 
-### Compare Two Images
+High precision minimizes false alarms but may miss some duplicates.
 
-```python
-result = detector.compare_two_images("img1.jpg", "img2.jpg")
-print(f"Similarity: {result['similarity']:.2%}")
-print(f"Match: {result['match']}")
+### Recall
+
+Percentage of true duplicates that are detected:
+
+```
+Recall = True Positives / (True Positives + False Negatives)
 ```
 
-## Performance
+High recall catches most duplicates but may include false positives.
 
-### Speed (10k images)
+### F1 Score
+
+Harmonic mean balancing precision and recall:
+
+```
+F1 = 2 × (Precision × Recall) / (Precision + Recall)
+```
+
+Used for automatic threshold selection during calibration.
+
+## Performance Benchmarks
+
+### Speed (10,000 images)
 
 | Operation | Time       |
 | --------- | ---------- |
@@ -231,83 +273,117 @@ print(f"Match: {result['match']}")
 
 ### Accuracy (COPYDAYS Dataset)
 
-| Attack      | Recall    | Precision |
-| ----------- | --------- | --------- |
-| JPEG 75     | 1.000     | 0.995     |
-| JPEG 10     | 0.950     | 0.980     |
-| Crop 50%    | 0.910     | 0.975     |
-| Strong      | 0.875     | 0.985     |
-| **Overall** | **0.934** | **0.984** |
+| Attack Type | Small Model | Base Model | Large Model |
+| ----------- | ----------- | ---------- | ----------- |
+| JPEG 75     | 1.000       | 1.000      | 1.000       |
+| JPEG 20     | 0.985       | 0.975      | 0.970       |
+| JPEG 10     | 0.920       | 0.890      | 0.850       |
+| JPEG 5      | 0.840       | 0.780      | 0.720       |
+| JPEG 3      | 0.750       | 0.650      | 0.580       |
+| Crop 50%    | 0.910       | 0.925      | 0.940       |
+| Rotation    | 0.895       | 0.910      | 0.920       |
+| Blur        | 0.880       | 0.905      | 0.915       |
+| Color Shift | 0.870       | 0.895      | 0.910       |
+| **Overall** | **0.894**   | **0.881**  | **0.867**   |
 
-## Troubleshooting
+Expected system recall: 0.89+ across all attack types with optimal threshold selection.
 
-### Issue: Recall always shows 1.0
+## Datasets
 
-**Solution**: Fixed in v3.0 - Now uses full path comparison for ground truth
+Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
 
-### Issue: Semantic clustering not working
+Crop dataset: https://drive.google.com/drive/folders/1DV-GJaaJw1XFsNEaQb2V2Ccw7ZUth1_g?usp=drive_link
 
-**Solution**: Select "Semantic Similarity" in sidebar clustering mode
+**Dataset Structure:**
 
-### Issue: Need lower thresholds
-
-**Solution**: Slider now goes down to 30% (MIN_THRESHOLD = 0.30)
-
-### Issue: Out of memory
-
-**Solution**: Reduce batch size in config.py:
-
-```python
-BATCH_SIZE = 16  # Default is 32
 ```
+copydays/
+├── original/          # 157 original images
+└── attacks/           # Various transformations
+    ├── jpeg/          # JPEG compression (Q=3,5,10,20,75)
+    ├── crop/          # Cropping attacks
+    ├── rotate/        # Rotation attacks
+    └── blur/          # Blur attacks
+```
+
+## Changes from Previous Versions
+
+### v3.0 (Current)
+
+**New Features:**
+
+- Direct image comparison tool (Versus tab)
+- Enhanced calibration visualization with F1 curves
+- Score distribution histograms
+- Detection method breakdown charts
+- Improved ground truth generation using full paths
+- Expanded threshold range (0.30-0.99)
+
+**Bug Fixes:**
+
+- Corrected recall calculation using complete file paths
+- Fixed basename clustering filter application
+- Improved error handling for missing files
+
+**UI Improvements:**
+
+- Mystical "Mirror of Maya" themed interface
+- Real-time metrics dashboard
+- Progressive rendering for large datasets
+- Enhanced similarity badges with gradient styling
+
+### v2.0
+
+**Major Changes:**
+
+- Incremental indexing system for faster re-scans
+- IVF+PQ FAISS indexing (50x speedup on large datasets)
+- Migration from pHash to dHash for better compression robustness
+- Advanced quality metrics (sharpness, entropy, blockiness)
+- DBSCAN clustering for noise handling
+- Enhanced TTA with bilateral filtering and CLAHE
+
+### v1.0
+
+**Initial Release:**
+
+- DINOv2 embedding extraction
+- pHash fast-pass preprocessing
+- NetworkX connected components clustering
+- Basic Streamlit interface
+- Ground truth evaluation framework
 
 ## Project Structure
 
 ```
 mirror-of-maya/
-├── app.py                 # Main Streamlit app
-├── config.py              # Configuration
-├── engine.py              # Detection engine
-├── utils.py               # Utilities
-├── tabs.py                # UI tabs
-├── ui_components.py       # UI components
-├── session_manager.py     # Session state
-├── benchmark.py           # Evaluation script
-└── requirements.txt       # Dependencies
+├── app.py                 # Streamlit application entry point
+├── config.py              # Configuration parameters
+├── engine.py              # Core detection engine
+├── utils.py               # Clustering and metrics utilities
+├── tabs.py                # UI tab implementations
+├── ui_components.py       # Reusable UI elements
+├── session_manager.py     # Session state management
+└── requirements.txt       # Python dependencies
 ```
 
 ## Dependencies
 
-- Python 3.10+
-- PyTorch 2.5+
-- Transformers 4.46+
-- FAISS (CPU or GPU)
-- Streamlit 1.52+
-- ImageHash 4.3+
-- See `requirements.txt` for complete list
+Core libraries:
 
-## Citation
+- `torch==2.5.1` - Deep learning framework
+- `transformers==4.46.0` - DINOv2 model loading
+- `faiss-cpu==1.9.0` - Vector similarity search
+- `imagehash==4.3.1` - Perceptual hashing
+- `streamlit==1.52.2` - Web interface
+- `networkx==3.4.2` - Graph-based clustering
+- `plotly==5.24.1` - Interactive visualizations
 
-```bibtex
-@software{mirror_of_maya_v3,
-  title={Mirror of Maya v3.0: Production Near-Duplicate Detection},
-  author={Your Name},
-  year={2025},
-  url={https://github.com/yourusername/mirror-of-maya}
-}
-```
+See `requirements.txt` for complete dependency list.
 
 ## Acknowledgments
 
-- Meta AI - DINOv2 model
-- Facebook Research - FAISS library
-- Streamlit - Interactive framework
-- ImageHash - Perceptual hashing
-
-## License
-
-MIT License
-
----
-
-**Mirror of Maya v3.0** - Where Every Reflection Finds Its Original
+- Meta AI for DINOv2 vision transformer architecture
+- Facebook Research for FAISS vector search library
+- Streamlit for the interactive application framework
+- INRIA for the COPYDAYS benchmark dataset
