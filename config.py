@@ -1,5 +1,6 @@
 import torch
 import os
+import tempfile
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -31,13 +32,17 @@ ENABLE_INCREMENTAL_INDEXING = True
 
 # Files
 SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff')
-DATASET_PATH = "./dataset_copydays"
+DATASET_PATH = os.environ.get("MAYA_DATASET_PATH", "./dataset_copydays")
 ORIGINAL_DIR_NAME = "original"
 
 # UI
 CLUSTERS_PER_PAGE = 10
 MAX_IMAGES_PER_ROW = 3
-TEMP_QUERY_FILE = "temp_query.jpg"
+
+# Temp directory for uploaded/query files
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "mirror_of_maya")
+os.makedirs(TEMP_DIR, exist_ok=True)
+TEMP_QUERY_FILE = os.path.join(TEMP_DIR, "temp_query.jpg")
 
 # Advanced
 ENABLE_QUALITY_METRICS = True

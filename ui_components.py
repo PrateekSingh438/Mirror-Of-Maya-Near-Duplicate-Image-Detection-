@@ -11,7 +11,7 @@ from session_manager import save_session_state, recalculate_metrics
 def apply_custom_css():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         
         /* Main container - Deep mystical background */
         .main {
@@ -55,12 +55,6 @@ def apply_custom_css():
             box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
         }
         
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 0.3; transform: translateX(-50%) scale(1); }
-            50% { opacity: 0.6; transform: translateX(-50%) scale(1.1); }
-        }
-        
         /* Main header - Divine title */
         .main-header {
             font-family: 'Cinzel', serif;
@@ -79,7 +73,7 @@ def apply_custom_css():
             animation: shimmer 8s ease-in-out infinite;
             margin-bottom: 0.5rem;
             letter-spacing: 0.1em;
-            text-shadow: 0 0 30px rgba(168, 85, 247, 0.5);
+            filter: drop-shadow(0 0 30px rgba(168, 85, 247, 0.5));
         }
         
         @keyframes shimmer {
@@ -187,7 +181,7 @@ def apply_custom_css():
         }
         
         /* Expander - Mystical containers */
-        .streamlit-expanderHeader {
+        [data-testid="stExpander"] summary {
             font-family: 'Cinzel', serif;
             font-weight: 600;
             color: #a855f7;
@@ -271,7 +265,7 @@ def render_sidebar():
 def _render_model_selection():
     with st.expander("MODEL SELECTION", expanded=True):
         available_models = {
-            "DINOv2 Small (21M paramaters)": "facebook/dinov2-small",
+            "DINOv2 Small (21M parameters)": "facebook/dinov2-small",
             "DINOv2 Base (86M parameters)": "facebook/dinov2-base",
             "DINOv2 Large (300M parameters)": "facebook/dinov2-large"
         }
@@ -286,22 +280,148 @@ def _render_model_selection():
         if st.session_state.selected_model != config.MODEL_ID:
             st.info("Model change requires re-consecration (re-scan)")
 
+def _is_running_locally():
+    """Check if the app is running on localhost vs a remote deployment."""
+    try:
+        host = st.context.headers.get("Host", "")
+        return "localhost" in host or "127.0.0.1" in host
+    except Exception:
+        return os.path.exists(config.DATASET_PATH)
+
+def _download_from_gdrive(url):
+    """Download a ZIP from a Google Drive shareable link and extract it."""
+    import gdown
+    import zipfile
+    import shutil
+    import re
+
+    # Extract file ID from various Google Drive URL formats
+    file_id = None
+    patterns = [
+        r'/file/d/([a-zA-Z0-9_-]+)',       # /file/d/FILE_ID/view
+        r'id=([a-zA-Z0-9_-]+)',             # ?id=FILE_ID
+        r'/folders/([a-zA-Z0-9_-]+)',       # /folders/FOLDER_ID
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            file_id = match.group(1)
+            break
+
+    if not file_id:
+        raise ValueError("Could not extract file ID from the Google Drive URL. Use a shareable link like: https://drive.google.com/file/d/FILE_ID/view?usp=sharing")
+
+    download_dir = os.path.join(config.TEMP_DIR, "gdrive_dataset")
+    if os.path.exists(download_dir):
+        shutil.rmtree(download_dir)
+    os.makedirs(download_dir, exist_ok=True)
+
+    zip_path = os.path.join(config.TEMP_DIR, "gdrive_download.zip")
+    gdown.download(id=file_id, output=zip_path, quiet=False)
+
+    if not os.path.exists(zip_path):
+        raise FileNotFoundError("Download failed. Make sure the file is shared publicly (Anyone with the link).")
+
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        zf.extractall(download_dir)
+
+    os.remove(zip_path)
+    return download_dir
+
 def _render_dataset_config():
     with st.expander("Sacred Repository", expanded=True):
-        dataset_path = st.text_input("Repository Path:", value=config.DATASET_PATH, key="dataset_path_input")
-        
-        if os.path.exists(dataset_path):
-            dir_size = get_dir_size(dataset_path)
-            st.success(f"✓ {dir_size:.1f} MB of digital souls indexed")
+        is_local = _is_running_locally()
+
+        if is_local:
+            source = st.radio(
+                "Dataset Source:",
+                ["Local Path", "Upload ZIP", "Google Drive Link"],
+                key="dataset_source_mode",
+                horizontal=True
+            )
         else:
-            st.error("Repository not found in this realm")
+            source = st.radio(
+                "Dataset Source:",
+                ["Upload ZIP", "Google Drive Link"],
+                key="dataset_source_mode",
+                horizontal=True
+            )
+
+        # --- LOCAL PATH ---
+        if source == "Local Path":
+            dataset_path = st.text_input(
+                "Dataset Path:",
+                value=st.session_state.get("active_dataset_path", config.DATASET_PATH),
+                key="local_dataset_path",
+                help="Absolute path to your local dataset folder"
+            )
+            st.session_state["active_dataset_path"] = dataset_path
+            if os.path.exists(dataset_path):
+                dir_size = get_dir_size(dataset_path)
+                st.success(f"✓ {dir_size:.1f} MB of digital souls indexed")
+            else:
+                st.info("Enter a valid path to your dataset folder")
+
+        # --- ZIP UPLOAD ---
+        elif source == "Upload ZIP":
+            uploaded_zip = st.file_uploader(
+                "Upload dataset (.zip)",
+                type=["zip"],
+                key="dataset_zip_upload",
+                help="Upload a ZIP containing your images. Subfolders like 'original/' enable ground truth calibration."
+            )
+            if uploaded_zip is not None:
+                import zipfile
+                import shutil
+                upload_dir = os.path.join(config.TEMP_DIR, "uploaded_dataset")
+                if os.path.exists(upload_dir):
+                    shutil.rmtree(upload_dir)
+                os.makedirs(upload_dir, exist_ok=True)
+                with zipfile.ZipFile(uploaded_zip, 'r') as zf:
+                    zf.extractall(upload_dir)
+                st.session_state["active_dataset_path"] = upload_dir
+                dir_size = get_dir_size(upload_dir)
+                st.success(f"✓ Extracted {dir_size:.1f} MB from ZIP")
+            else:
+                st.info("Upload a ZIP file containing your image dataset")
+
+        # --- GOOGLE DRIVE ---
+        elif source == "Google Drive Link":
+            gdrive_url = st.text_input(
+                "Google Drive Link:",
+                placeholder="https://drive.google.com/file/d/.../view?usp=sharing",
+                key="gdrive_url_input",
+                help="Paste a shareable Google Drive link to a ZIP file of your dataset. Make sure sharing is set to 'Anyone with the link'."
+            )
+            if st.button("Download from Drive", key="gdrive_download_btn"):
+                if not gdrive_url:
+                    st.error("Paste a Google Drive link first")
+                else:
+                    try:
+                        with st.spinner("Downloading dataset from Google Drive..."):
+                            download_dir = _download_from_gdrive(gdrive_url)
+                        st.session_state["active_dataset_path"] = download_dir
+                        dir_size = get_dir_size(download_dir)
+                        st.success(f"✓ Downloaded {dir_size:.1f} MB from Google Drive")
+                    except Exception as e:
+                        st.error(f"Download failed: {e}")
+            elif st.session_state.get("active_dataset_path", "").startswith(config.TEMP_DIR):
+                path = st.session_state["active_dataset_path"]
+                if os.path.exists(path):
+                    dir_size = get_dir_size(path)
+                    st.success(f"✓ {dir_size:.1f} MB loaded from Google Drive")
+
+        # Show current active path status
+        active = st.session_state.get("active_dataset_path")
+        if active and os.path.exists(active):
+            st.caption(f"Active dataset: `{active}`")
 
 def _render_scan_button():
     if st.button("SCAN DATABASE", type="primary", width='stretch'):
-        dataset_path = st.session_state.get('dataset_path_input', config.DATASET_PATH)
-        
-        if not os.path.exists(dataset_path):
-            st.error("Sacred path not found!")
+        dataset_path = st.session_state.get('active_dataset_path', config.DATASET_PATH)
+
+        if not dataset_path or not os.path.exists(dataset_path):
+            st.error("No valid dataset found! Upload a ZIP file or provide a valid local path.")
         else:
             start_time = datetime.now()
             
@@ -350,7 +470,7 @@ def _render_scan_button():
 
 def _render_session_info():
     st.markdown("---")
-    st.markdown("###Scan Statistics")
+    st.markdown("### Scan Statistics")
     
     if st.session_state.get('scan_stats'):
         stats = st.session_state.scan_stats
@@ -410,13 +530,13 @@ def render_threshold_control():
 
 def get_short_path(path):
     try:
-        if not path: 
+        if not path:
             return ""
         parent = os.path.basename(os.path.dirname(path))
         filename = os.path.basename(path)
         return f"{parent}/{filename}"
-    except:
-        return os.path.basename(path)
+    except (TypeError, ValueError, OSError):
+        return os.path.basename(path) if path else ""
 
 def get_similarity_class(score):
     if score >= 0.95:

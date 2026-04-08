@@ -4,6 +4,8 @@ import json
 from datetime import datetime
 import config
 
+SESSION_FILE = os.path.join(config.TEMP_DIR, "session_state.json")
+
 def initialize_session_state():
     defaults = {
         'detector': None,
@@ -20,7 +22,7 @@ def initialize_session_state():
         'page': 0,
         'clustering_mode': 'basename'
     }
-    
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -36,15 +38,15 @@ def save_session_state():
             'selected_model': st.session_state.get('selected_model', config.MODEL_ID),
             'clustering_mode': st.session_state.get('clustering_mode', 'basename')
         }
-        with open('session_state.json', 'w') as f:
+        with open(SESSION_FILE, 'w') as f:
             json.dump(state_data, f)
     except Exception as e:
         st.warning(f"Could not save session: {str(e)}")
 
 def load_session_state():
     try:
-        if os.path.exists('session_state.json'):
-            with open('session_state.json', 'r') as f:
+        if os.path.exists(SESSION_FILE):
+            with open(SESSION_FILE, 'r') as f:
                 state_data = json.load(f)
                 st.session_state.optimal_thresh = state_data.get('optimal_thresh', config.DEFAULT_THRESHOLD)
                 st.session_state.f1_score = state_data.get('f1_score', 0.0)
@@ -53,7 +55,7 @@ def load_session_state():
                 st.session_state.selected_model = state_data.get('selected_model', config.MODEL_ID)
                 st.session_state.clustering_mode = state_data.get('clustering_mode', 'basename')
                 return state_data.get('last_scan')
-    except:
+    except Exception:
         pass
     return None
 

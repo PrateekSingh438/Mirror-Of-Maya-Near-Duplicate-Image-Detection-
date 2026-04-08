@@ -41,14 +41,14 @@ class DuplicateDetector:
                 faiss.normalize_L2(vector)
             
             return vector
-        except:
+        except (OSError, RuntimeError, ValueError):
             return None
-    
+
     def _compute_hash(self, image_path):
         try:
             img = Image.open(image_path).convert('RGB')
             return str(imagehash.dhash(img, hash_size=config.HASH_SIZE))
-        except:
+        except (OSError, ValueError):
             return None
     
     def bulk_index(self, folder):

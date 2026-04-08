@@ -148,7 +148,7 @@ def _get_duplicates_from_graph(files, original, graph):
                 for i in range(len(path)-1):
                     scores.append(graph[path[i]][path[i+1]]['weight'])
                 score = sum(scores) / len(scores)
-            except:
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
         
         dups_list.append({'path': node, 'score': float(score)})
@@ -160,20 +160,20 @@ def get_dir_size(path):
     try:
         for f in walk_image_files(path):
             total += os.path.getsize(f)
-    except:
+    except OSError:
         pass
     return total / (1024 * 1024)
 
 def calculate_wasted_space(duplicates):
     seen = set()
     total = 0
-    
+
     for d in duplicates:
         if d['file2'] not in seen:
             try:
                 total += os.path.getsize(d['file2'])
                 seen.add(d['file2'])
-            except:
+            except OSError:
                 pass
     
     return total / (1024 * 1024)

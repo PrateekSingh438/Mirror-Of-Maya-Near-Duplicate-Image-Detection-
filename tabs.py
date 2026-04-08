@@ -5,32 +5,29 @@ import plotly.graph_objects as go
 import config
 from utils import organize_clusters, format_file_size
 from ui_components import get_short_path, get_similarity_class
-import plotly.express as px
-from plotly.subplots import make_subplots
 import numpy as np
 import base64
-from PIL import Image
 
 
 def dashboard_tab():  
     if not st.session_state.duplicates:
         st.markdown("""
         <div style='text-align: center; padding: 4rem 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1)); border-radius: 1rem; border: 2px solid rgba(139, 92, 246, 0.3);'>
-            <h2 style='color: #a855f7; font-size: 2rem; margin-bottom: 1rem;'>The Mirror of Maya Awaits</h2>
-            <p style='color: #94a3b8; font-size: 1.2rem;'>Click 'Full Scan' to pierce through the veil of digital illusions</p>
-            <p style='color: #64748b; margin-top: 1rem;'>Just as Maya creates a thousand forms from one truth, this system reveals the original soul beneath countless digital avatars</p>
+            <h2 style='color: #a855f7; font-family: Cinzel, serif; font-size: 2rem; margin-bottom: 1rem;'>The Mirror of Maya Awaits</h2>
+            <p style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 1.2rem;'>Click <strong>SCAN DATABASE</strong> in the sidebar to pierce through the veil of digital illusions</p>
+            <p style='color: #64748b; font-family: Inter, sans-serif; margin-top: 1rem;'>Just as Maya creates a thousand forms from one truth, this system reveals the original soul beneath countless digital avatars</p>
         </div>
         """, unsafe_allow_html=True)
         return
     
     st.markdown("""
     <div style='text-align: center; margin-bottom: 2rem;'>
-        <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%); 
-                   -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
-                   font-size: 2.5rem; font-weight: 800;'>
+        <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+                   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                   font-family: Cinzel, serif; font-size: 2.5rem; font-weight: 800;'>
             Mirror Of Maya: Digital Discernment Engine
         </h2>
-        <p style='color: #94a3b8; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
+        <p style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
     </div>
     """, unsafe_allow_html=True)
     clustering_mode = st.session_state.get('clustering_mode', 'basename')
@@ -43,9 +40,9 @@ def dashboard_tab():
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2)); 
                     padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(99, 102, 241, 0.3);'>
-            <div style='color: #818cf8; font-size: 0.875rem; font-weight: 600;'>ILLUSIONS PIERCED</div>
-            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{unique_dups:,}</div>
-            <div style='color: #94a3b8; font-size: 0.75rem;'>Digital avatars unmasked</div>
+            <div style='color: #818cf8; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>ILLUSIONS PIERCED</div>
+            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{unique_dups:,}</div>
+            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Digital avatars unmasked</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -53,9 +50,9 @@ def dashboard_tab():
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2)); 
                     padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(168, 85, 247, 0.3);'>
-            <div style='color: #c084fc; font-size: 0.875rem; font-weight: 600;'>TRUTH CLUSTERS</div>
-            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{len(clusters):,}</div>
-            <div style='color: #94a3b8; font-size: 0.75rem;'>Original souls identified</div>
+            <div style='color: #c084fc; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>TRUTH CLUSTERS</div>
+            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{len(clusters):,}</div>
+            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Original souls identified</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -63,9 +60,9 @@ def dashboard_tab():
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(244, 114, 182, 0.2)); 
                     padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(236, 72, 153, 0.3);'>
-            <div style='color: #f472b6; font-size: 0.875rem; font-weight: 600;'>DISCERNMENT ACCURACY</div>
-            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{st.session_state.f1_score:.1%}</div>
-            <div style='color: #94a3b8; font-size: 0.75rem;'>F1 Score (Chakra precision)</div>
+            <div style='color: #f472b6; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>DISCERNMENT ACCURACY</div>
+            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{st.session_state.f1_score:.1%}</div>
+            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>F1 Score</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -74,9 +71,9 @@ def dashboard_tab():
         st.markdown(f"""
         <div style='background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); 
                     padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(16, 185, 129, 0.3);'>
-            <div style='color: #34d399; font-size: 0.875rem; font-weight: 600;'>IMAGE SIMILARITY</div>
-            <div style='color: #e2e8f0; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{avg_sim:.1%}</div>
-            <div style='color: #94a3b8; font-size: 0.75rem;'>Average resemblance</div>
+            <div style='color: #34d399; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>IMAGE SIMILARITY</div>
+            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{avg_sim:.1%}</div>
+            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Average resemblance</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -180,9 +177,7 @@ def _render_score_distribution():
     st.markdown("*How similar are the detected avatars to their originals?*")
     
     scores = [d['score'] for d in st.session_state.duplicates]
-    
-    col1, col2 = st.columns(2)
-    
+
     # Histogram
     fig = go.Figure()
     
@@ -335,7 +330,7 @@ def manager_tab():
                 os.remove(f)
                 st.session_state.deletion_queue.discard(f)
                 deleted += 1
-            except:
+            except OSError:
                 pass
             progress_bar.progress((i + 1) / total)
         
@@ -371,8 +366,8 @@ def manager_tab():
                 try:
                     st.image(cluster['original'], width='stretch')
                     st.caption(get_short_path(cluster['original']))
-                except:
-                    st.error("Load failed")
+                except (OSError, ValueError, Exception) as e:
+                    st.error(f"Load failed: {e}")
             
             with col_dups:
                 st.markdown("*Duplicates*")
@@ -423,8 +418,8 @@ def manager_tab():
                             st.session_state.deletion_queue.add(dup['path'])
                         else:
                             st.session_state.deletion_queue.discard(dup['path'])
-                    except:
-                        c.error("Error")
+                    except Exception as e:
+                        c.error(f"Error: {e}")
             
             st.markdown("---")
     
@@ -436,7 +431,7 @@ def manager_tab():
             st.rerun()
     
     with col_center:
-        st.markdown(f"<div style='text-align: center; padding-top: 0.5rem;'>Page {st.session_state.page + 1} / {total_pages}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; padding-top: 0.5rem; font-family: Inter, sans-serif; color: #94a3b8;'>Page {st.session_state.page + 1} / {total_pages}</div>", unsafe_allow_html=True)
     
     with col_next:
         if end < len(clusters) and st.button("Next →", width='stretch'):
@@ -456,16 +451,17 @@ def search_tab():
         max_results = st.number_input("Max Results", 1, 100, 50)
     
     if uploaded and st.session_state.detector:
-        with open(config.TEMP_QUERY_FILE, "wb") as f:
+        query_path = config.TEMP_QUERY_FILE
+        with open(query_path, "wb") as f:
             f.write(uploaded.getbuffer())
-        
+
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.image(config.TEMP_QUERY_FILE, caption="Query", width='stretch')
-        
+            st.image(query_path, caption="Query", width='stretch')
+
         with st.spinner("Searching..."):
             results = st.session_state.detector.find_matches_for_file(
-                config.TEMP_QUERY_FILE,
+                query_path,
                 threshold=query_threshold,
                 top_k=max_results
             )
@@ -488,8 +484,8 @@ def search_tab():
                                     unsafe_allow_html=True
                                 )
                                 st.caption(get_short_path(res['path']))
-                            except:
-                                st.error("Load error")
+                            except Exception as e:
+                                st.error(f"Load error: {e}")
         else:
             st.warning(f"No matches at {query_threshold:.0%}")
     elif not st.session_state.detector:
@@ -539,7 +535,7 @@ def analytics_tab():
     st.dataframe(df_details, width='stretch', height=400)
 
 def hash_duplicates_tab():
-    st.markdown("###Hash-Based Duplicate Detection")
+    st.markdown("### Hash-Based Duplicate Detection")
     
     if not st.session_state.detector:
         st.info("Run a scan first to enable hash detection")
@@ -609,8 +605,8 @@ def versus_tab():
     
     if img1 and img2:
         # Save temp files
-        temp1 = "temp_img1.jpg"
-        temp2 = "temp_img2.jpg"
+        temp1 = os.path.join(config.TEMP_DIR, "temp_img1.jpg")
+        temp2 = os.path.join(config.TEMP_DIR, "temp_img2.jpg")
         
         with open(temp1, "wb") as f:
             f.write(img1.getbuffer())
@@ -636,8 +632,10 @@ def versus_tab():
             # Large similarity display
             st.markdown(f"""
             <div style='text-align: center; padding: 2rem;'>
-                <h1 style='font-size: 4rem; margin: 0;'>{similarity_pct:.1f}%</h1>
-                <p style='font-size: 1.5rem; color: #94a3b8;'>Similarity</p>
+                <h1 style='font-family: Cinzel, serif; font-size: 4rem; margin: 0;
+                           background: linear-gradient(135deg, #6366f1, #a855f7);
+                           -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>{similarity_pct:.1f}%</h1>
+                <p style='font-family: Inter, sans-serif; font-size: 1.5rem; color: #94a3b8;'>Similarity</p>
             </div>
             """, unsafe_allow_html=True)
             
@@ -679,3 +677,83 @@ def versus_tab():
                     st.warning(f"Hash distance: {result['hash_distance']} - Perceptually different")
         else:
             st.error("Failed to compare images")
+
+
+def architecture_tab():
+    st.markdown("""
+    ### System Architecture
+
+    Mirror of Maya uses a **two-phase detection pipeline** combining classical perceptual hashing
+    with deep learning embeddings to achieve both speed and accuracy.
+
+    ---
+
+    #### Phase 1: Perceptual Hashing (dHash)
+    - **Algorithm**: Difference Hash (dHash) with 16x16 hash size
+    - **Purpose**: Fast-pass filter for exact and near-exact duplicates
+    - **How it works**: Converts each image to a grayscale gradient fingerprint, then compares
+      fingerprints using Hamming distance (threshold ≤ 2 bits)
+    - **Complexity**: O(n) for indexing, O(1) per lookup
+    - **Strength**: Catches identical copies, minor crops, and JPEG re-compressions instantly
+
+    #### Phase 2: Deep Semantic Embeddings (DINOv2)
+    - **Model**: Meta's DINOv2 (self-supervised Vision Transformer)
+    - **Variants**: Small (21M), Base (86M), Large (300M) parameters
+    - **How it works**: Each image is projected into a high-dimensional embedding space where
+      visually similar images cluster together. Similarity is measured via cosine distance.
+    - **Index**: FAISS `IndexFlatIP` for exact inner-product search
+    - **Strength**: Detects semantically similar images even under heavy transformations
+      (cropping, color shifts, overlays)
+
+    ---
+
+    #### Threshold Calibration
+    The system auto-calibrates the optimal similarity threshold using **ground truth pairs**
+    from the dataset:
+    1. Images in the `original/` folder are treated as ground truth sources
+    2. Files with matching basenames in other folders (e.g., `jpeg/`, `crops/`) are treated as known duplicates
+    3. F1 score is maximized across thresholds from 0.30 to 0.95
+    4. The threshold slider allows real-time exploration of the precision-recall tradeoff
+
+    #### Clustering
+    Detected duplicate pairs are organized into clusters using **NetworkX graph components**.
+    Each cluster has one "original" (selected by path heuristic or highest connectivity)
+    and one or more duplicates.
+
+    ---
+
+    #### Tech Stack
+    | Component | Technology |
+    |-----------|-----------|
+    | Frontend | Streamlit |
+    | Vision Model | DINOv2 (HuggingFace Transformers) |
+    | Hashing | imagehash (dHash) |
+    | Vector Search | FAISS (Facebook AI Similarity Search) |
+    | Graph Clustering | NetworkX |
+    | Visualization | Plotly |
+    | Deep Learning | PyTorch |
+
+    #### Key Design Decisions
+    - **Two-phase pipeline**: Hash phase eliminates exact duplicates cheaply before expensive
+      embedding computation, reducing DINOv2 calls by ~30-50%
+    - **L2-normalized embeddings + Inner Product**: Equivalent to cosine similarity but faster
+      with FAISS `IndexFlatIP`
+    - **Basename-aware clustering**: Leverages dataset structure for ground truth without
+      manual annotation
+    - **Real-time threshold tuning**: Users can explore precision vs recall tradeoff without
+      re-scanning
+    """)
+
+    if st.session_state.detector:
+        st.markdown("---")
+        st.markdown("#### Current Session Stats")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Images Indexed", st.session_state.detector.index.ntotal)
+            st.metric("Hash Duplicates (Phase 1)", len(st.session_state.detector.fast_duplicates))
+        with col2:
+            st.metric("Embedding Dimension", st.session_state.detector.dimension)
+            st.metric("Model", st.session_state.selected_model.split("/")[-1])
+        with col3:
+            st.metric("Device", st.session_state.detector.device.upper())
+            st.metric("Optimal Threshold", f"{st.session_state.optimal_thresh:.2f}")

@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime
 import config
 from ui_components import render_sidebar, render_header, apply_custom_css, render_threshold_control
-from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab, versus_tab
+from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab, versus_tab, architecture_tab
 from utils import format_file_size, organize_clusters, calculate_wasted_space
 from session_manager import initialize_session_state, load_session_state
 
@@ -49,7 +49,7 @@ if st.session_state.detector:
 st.markdown("---")
 
 # Tabs
-tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics", "Hash Duplicates", "Versus"])
+tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics", "Hash Duplicates", "Versus", "Architecture"])
 
 with tabs[0]:
     dashboard_tab()
@@ -68,6 +68,9 @@ with tabs[4]:
 
 with tabs[5]:
     versus_tab()
+
+with tabs[6]:
+    architecture_tab()
 
 # Footer
 st.markdown("---")
