@@ -40,6 +40,37 @@ def write_thumbnail(out_dir, img_id, image):
     thumb.save(os.path.join(thumb_dir, f"{img_id}.jpg"), "JPEG", quality=82)
 
 
+def pack_thumbnails(out_dir):
+    """Zip out_dir/thumbnails/*.jpg into out_dir/thumbnails.zip and drop the dir.
+
+    Keeps the bundle to a handful of files so it uploads/downloads as a unit.
+    """
+    thumb_dir = os.path.join(out_dir, "thumbnails")
+    if not os.path.isdir(thumb_dir):
+        return None
+    zip_path = os.path.join(out_dir, "thumbnails.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+        for name in sorted(os.listdir(thumb_dir)):
+            zf.write(os.path.join(thumb_dir, name), name)
+    shutil.rmtree(thumb_dir)
+    return zip_path
+
+
+def _extract_thumbnails(zip_path):
+    """Extract thumbnails.zip once into a stable temp dir; return that dir."""
+    import hashlib
+    key = hashlib.md5(os.path.abspath(zip_path).encode()).hexdigest()[:12]
+    dest = os.path.join(CFG.TEMP_DIR, "thumbs", key)
+    marker = os.path.join(dest, ".done")
+    if os.path.isfile(marker):
+        return dest
+    os.makedirs(dest, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(dest)
+    open(marker, "w").close()
+    return dest
+
+
 def save_bundle(out_dir, index, metadata_rows, calibration, thumbnails=None):
     """Write a bundle to `out_dir`.
 
@@ -57,6 +88,10 @@ def save_bundle(out_dir, index, metadata_rows, calibration, thumbnails=None):
 
     for img_id, img in (thumbnails or {}).items():
         write_thumbnail(out_dir, img_id, img)
+
+    # Pack thumbnails into a single zip — thousands of tiny files would blow
+    # past the Hub's request rate limit and make app cold-start slow.
+    pack_thumbnails(out_dir)
 
     with open(os.path.join(out_dir, "calibration.json"), "w") as f:
         json.dump(calibration, f, indent=2)
@@ -157,12 +192,18 @@ def load_bundle(cfg=CFG):
         with open(calib_path) as f:
             calib = json.load(f)
 
+    # Thumbnails ship as a single zip (preferred) or a loose folder (legacy).
+    thumbs_dir = os.path.join(path, "thumbnails")
+    zip_path = os.path.join(path, "thumbnails.zip")
+    if not os.path.isdir(thumbs_dir) and os.path.isfile(zip_path):
+        thumbs_dir = _extract_thumbnails(zip_path)
+
     return {
         "dir": path,
         "index": faiss.read_index(os.path.join(path, "index.faiss")),
         "meta": pd.read_parquet(os.path.join(path, "metadata.parquet")),
         "calibration": calib,
-        "thumbnails": os.path.join(path, "thumbnails"),
+        "thumbnails": thumbs_dir,
         "manifest": manifest,
     }
 
