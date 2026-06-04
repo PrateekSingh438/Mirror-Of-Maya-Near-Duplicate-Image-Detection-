@@ -17,3 +17,9 @@ session_state.json
 *.jpg
 diagnostic_check.py
 indexes/
+artifacts/
+.streamlit/secrets.toml
+.claude/
+*.log
+main.tex
+*.pdf

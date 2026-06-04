@@ -1,85 +1,57 @@
+"""Mirror of Maya — serving app (Streamlit shell).
+
+No dataset on disk is required. Mode A loads a prebuilt artifact bundle (local /
+HF / URL); Mode B dedups uploads in memory. The shell just wires modes to tabs.
+"""
+
 import streamlit as st
-from datetime import datetime
-import config
-from ui_components import render_sidebar, render_header, apply_custom_css, render_threshold_control
-from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab, versus_tab, architecture_tab
-from utils import format_file_size, organize_clusters, calculate_wasted_space
-from session_manager import initialize_session_state, load_session_state
 
-# Page config
-st.set_page_config(
-    page_title="Mirror of Maya", 
-    layout=config.LAYOUT, 
-    initial_sidebar_state="expanded"
-)
+from artifacts import load_bundle
+from config import CFG
+from ui.components import apply_css, render_header, render_sidebar
+from ui.session import init_state
+from ui.tabs import (analytics_tab, architecture_tab, manager_tab,
+                     search_tab, upload_dedup_tab, versus_tab)
 
-# Apply styling
-apply_custom_css()
+st.set_page_config(page_title=CFG.PAGE_TITLE, layout=CFG.LAYOUT,
+                   initial_sidebar_state="expanded")
+apply_css()
+init_state()
 
-# Initialize session
-initialize_session_state()
-load_session_state()
 
-# Sidebar
-render_sidebar()
+@st.cache_resource(show_spinner="Loading corpus bundle…")
+def get_bundle():
+    try:
+        return load_bundle(CFG)
+    except ValueError as e:
+        st.error(str(e))
+        return None
 
-# Header
-render_header()
 
-# Threshold control
-if st.session_state.detector and st.session_state.all_duplicates:
-    render_threshold_control()
+bundle = get_bundle()
+mode_label = "Corpus + Stateless" if bundle else "Stateless (no prebuilt index)"
 
-# Status bar
-if st.session_state.detector:
-    visible_dups = st.session_state.duplicates
-    
-    clustering_mode = st.session_state.get('clustering_mode', config.CLUSTERING_MODE)
-    clusters = organize_clusters(visible_dups, mode=clustering_mode)
-    
-    unique_duplicates = sum(len(c['duplicates']) for c in clusters)
-    waste = calculate_wasted_space(visible_dups)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("DUPLICATE FILES", f"{unique_duplicates:,}")
-    col2.metric("WASTED SPACE", format_file_size(waste * 1024 * 1024))
-    col3.metric("F1 SCORE", f"{st.session_state.f1_score:.4f}")
-    col4.metric("THRESHOLD", f"{st.session_state.current_slider_val:.2f}")
+render_header(mode_label)
+render_sidebar(bundle)
 
-st.markdown("---")
-
-# Tabs
-tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics", "Hash Duplicates", "Versus", "Architecture"])
-
+tab_names = ["Upload & Dedup", "Search", "Clusters", "Versus", "Analytics", "Architecture"]
+tabs = st.tabs(tab_names)
 with tabs[0]:
-    dashboard_tab()
-
+    upload_dedup_tab()
 with tabs[1]:
-    manager_tab()
-
+    search_tab(bundle)
 with tabs[2]:
-    search_tab()
-
+    manager_tab(bundle)
 with tabs[3]:
-    analytics_tab()
-
-with tabs[4]:
-    hash_duplicates_tab()
-
-with tabs[5]:
     versus_tab()
+with tabs[4]:
+    analytics_tab(bundle)
+with tabs[5]:
+    architecture_tab(bundle)
 
-with tabs[6]:
-    architecture_tab()
-
-# Footer
 st.markdown("---")
-st.markdown(f"""
-<div style='text-align: center; font-family: "Inter", sans-serif; color: #64748b; padding: 1.5rem; font-size: 0.875rem;'>
-    <div style='margin-bottom: 0.5rem; color: #6366f1; font-weight: 600; font-family: "Space Grotesk", sans-serif;'>
-        MIRROR OF MAYA
-    </div>
-    <div>Near-Duplicate Detection System</div>
-    <div style='margin-top: 0.5rem; opacity: 0.6;'>{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    "<div style='text-align:center;color:#64748b;font-size:0.8rem;padding:1rem;'>"
+    "MIRROR OF MAYA · Near-Duplicate Detection · DINOv2 + FAISS + dHash</div>",
+    unsafe_allow_html=True,
+)
