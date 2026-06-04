@@ -1,89 +1,67 @@
-"""Central configuration.
-
-Every value can be overridden by an environment variable or a Streamlit secret
-so the *same* code runs locally and on a CPU-only deployment with no source edits.
-Crucially, there is no hardcoded dataset path in the serving path — the deployed
-app loads a prebuilt artifact bundle (Mode A) and/or dedups uploads in-memory
-(Mode B). See mirror-of-maya-rebuild-spec.md.
-"""
-
+import torch
 import os
 import tempfile
 
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-def env(key, default=None):
-    """Read a setting from os.environ first, then st.secrets, else default."""
-    val = os.environ.get(key)
-    if val is not None:
-        return val
-    try:
-        import streamlit as st
-        if key in st.secrets:
-            return st.secrets[key]
-    except Exception:
-        pass
-    return default
+# System
+PAGE_TITLE = "Mirror of Maya"
+LAYOUT = "wide"
 
+# Model
+DEFAULT_MODEL_ID = "facebook/dinov2-small"
+MODEL_ID = DEFAULT_MODEL_ID
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 32
 
-def _env_bool(key, default):
-    val = env(key, None)
-    if val is None:
-        return default
-    return str(val).strip().lower() in ("1", "true", "yes", "on")
+# Thresholds
+CALIBRATION_THRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
+DEFAULT_THRESHOLD = 0.75
+MIN_THRESHOLD = 0.30  # Allow slider to go down to 30%
+MAX_THRESHOLD = 0.99
 
+# Hashing
+HASH_SIZE = 16
+HASH_THRESHOLD = 2
+USE_DHASH = True
 
-def _env_int(key, default):
-    try:
-        return int(env(key, default))
-    except (TypeError, ValueError):
-        return default
+# Database
+USE_IVF_INDEX = False
+INDEX_SAVE_PATH = "./indexes"
+ENABLE_INCREMENTAL_INDEXING = True
 
+# Files
+SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff')
+DATASET_PATH = os.environ.get("MAYA_DATASET_PATH", "./dataset_copydays")
+ORIGINAL_DIR_NAME = "original"
 
-class CFG:
-    # --- app shell ---
-    PAGE_TITLE = "Mirror of Maya"
-    LAYOUT = "wide"
+# UI
+CLUSTERS_PER_PAGE = 10
+MAX_IMAGES_PER_ROW = 3
 
-    # --- model / embedding ---
-    MODEL_ID = env("MODEL_ID", "facebook/dinov2-small")   # small | base | large
-    POOLING = env("POOLING", "cls")                       # "cls" | "mean"
-    BATCH_SIZE = _env_int("BATCH_SIZE", 16)
+# Temp directory for uploaded/query files
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "mirror_of_maya")
+os.makedirs(TEMP_DIR, exist_ok=True)
+TEMP_QUERY_FILE = os.path.join(TEMP_DIR, "temp_query.jpg")
 
-    # --- hashing ---
-    HASH_SIZE = 16
-    HASH_THRESHOLD = 2
+# Advanced
+ENABLE_QUALITY_METRICS = True
+USE_DBSCAN_CLUSTERING = True
+ENABLE_ADVANCED_TTA = False
 
-    # --- thresholds / calibration ---
-    DEFAULT_THRESHOLD = 0.75
-    MIN_THRESHOLD = 0.30
-    MAX_THRESHOLD = 0.99
-    CALIBRATION_THRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70,
-                              0.75, 0.80, 0.85, 0.90, 0.95]
-    CALIBRATION_OBJECTIVE = env("CALIBRATION_OBJECTIVE", "f1")  # f1|target_precision|target_recall
-    TARGET_PRECISION = float(env("TARGET_PRECISION", 0.95))
-    TARGET_RECALL = float(env("TARGET_RECALL", 0.90))
-    ENABLE_RERANK = _env_bool("ENABLE_RERANK", False)
-    EPSILON = 1e-9
+# Quality weights
+SHARPNESS_WEIGHT = 0.40
+ENTROPY_WEIGHT = 0.30
+RESOLUTION_WEIGHT = 0.20
+BLOCKINESS_PENALTY = 0.10
 
-    # --- files ---
-    SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff")
-    ORIGINAL_DIR_NAME = "original"
+# DBSCAN
+DBSCAN_EPS = 0.15
+DBSCAN_MIN_SAMPLES = 2
 
-    # --- deployment / artifact bundle ---
-    ARTIFACT_SOURCE = env("ARTIFACT_SOURCE", "local")     # local | hf | url
-    ARTIFACT_DIR = env("ARTIFACT_DIR", "./artifacts")
-    HF_ARTIFACT_REPO = env("HF_ARTIFACT_REPO", "")        # e.g. "user/mirror-of-maya-index"
-    ARTIFACT_URL = env("ARTIFACT_URL", "")                # https URL to a .zip bundle
-    THUMBNAIL_SIZE = _env_int("THUMBNAIL_SIZE", 256)
+# Limits
+MAX_DELETION_QUEUE_SIZE = 1000
+EPSILON = 1e-9
 
-    # --- ui ---
-    CLUSTERS_PER_PAGE = 5
-    MAX_IMAGES_PER_ROW = 3
-
-    # --- scratch space (always writable, ephemeral on deploy) ---
-    TEMP_DIR = os.path.join(tempfile.gettempdir(), "mirror_of_maya")
-
-
-os.makedirs(CFG.TEMP_DIR, exist_ok=True)
-# OpenMP duplicate-lib guard for faiss + torch on some Windows/conda setups.
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# Clustering
+CLUSTERING_MODE = "basename"  # "basename" or "semantic"
