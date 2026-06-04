@@ -29,12 +29,12 @@ def get_bundle():
 
 
 bundle = get_bundle()
-mode_label = "Corpus + Stateless" if bundle else "Stateless (no prebuilt index)"
 
-render_header(mode_label)
+render_header()
 render_sidebar(bundle)
 
-tab_names = ["Upload & Dedup", "Search", "Clusters", "Versus", "Analytics", "Architecture"]
+tab_names = ["Find Duplicates", "Search by Image", "Duplicate Groups",
+             "Compare Two", "Accuracy", "How It Works"]
 tabs = st.tabs(tab_names)
 with tabs[0]:
     upload_dedup_tab()
@@ -51,7 +51,7 @@ with tabs[5]:
 
 st.markdown("---")
 st.markdown(
-    "<div style='text-align:center;color:#64748b;font-size:0.8rem;padding:1rem;'>"
-    "MIRROR OF MAYA · Near-Duplicate Detection · DINOv2 + FAISS + dHash</div>",
+    "<div style='text-align:center;color:#6b7488;font-size:0.8rem;padding:0.8rem;'>"
+    "Mirror of Maya · finds duplicate &amp; near-identical images</div>",
     unsafe_allow_html=True,
 )

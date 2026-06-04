@@ -1,4 +1,4 @@
-"""Mode-aware tab implementations."""
+"""App tabs with plain-language copy (logic unchanged)."""
 
 import io
 import zipfile
@@ -17,28 +17,29 @@ from ui.components import badge, short_path
 
 
 # --------------------------------------------------------------------------- #
-# Mode B — Upload & Dedup (always available)
+# Find Duplicates (works for everyone — your own images, nothing is stored)
 # --------------------------------------------------------------------------- #
 def upload_dedup_tab():
-    st.markdown("### Upload & Dedup")
-    st.caption("Upload a batch of images (or a .zip). They are embedded and "
-               "clustered in memory — nothing is stored on the server.")
+    st.subheader("Find duplicates in your own images")
+    st.write("Upload a set of pictures (or a ZIP). The app groups together images "
+             "that are the same or nearly the same, so you can see and remove the "
+             "extra copies. Your images are processed in memory and **never stored**.")
 
     col_a, col_b = st.columns(2)
     with col_a:
-        files = st.file_uploader("Images", accept_multiple_files=True,
+        files = st.file_uploader("Upload images", accept_multiple_files=True,
                                  type=[e.strip(".") for e in CFG.SUPPORTED_EXTENSIONS],
                                  key="mb_files")
     with col_b:
-        zip_file = st.file_uploader("…or a .zip of images", type=["zip"], key="mb_zip")
+        zip_file = st.file_uploader("…or upload a ZIP of images", type=["zip"], key="mb_zip")
 
-    if st.button("Find Duplicates", type="primary"):
+    if st.button("Find duplicates", type="primary"):
         items, raw = _collect_uploads(files, zip_file)
         if len(items) < 2:
-            st.warning("Upload at least 2 readable images.")
+            st.warning("Please upload at least 2 images.")
         else:
             status = st.empty()
-            with st.spinner("Working…"):
+            with st.spinner("Looking for duplicates…"):
                 result = dedup_batch(items, progress=lambda m: status.write(m))
             status.empty()
             st.session_state.mb_result = result
@@ -47,7 +48,7 @@ def upload_dedup_tab():
 
     result = st.session_state.mb_result
     if not result:
-        st.info("Upload images and click **Find Duplicates**.")
+        st.info("Upload some images above, then click **Find duplicates**.")
         return
 
     threshold = st.session_state.threshold
@@ -56,24 +57,27 @@ def upload_dedup_tab():
     dup_count = sum(len(c["duplicates"]) for c in clusters)
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Images", f"{result['n_images']:,}")
+    c1.metric("Images checked", f"{result['n_images']:,}")
     c2.metric("Duplicate groups", f"{len(clusters):,}")
-    c3.metric("Duplicate images", f"{dup_count:,}")
-    st.caption(f"At threshold {threshold:.2f}. Move the sidebar slider to re-cluster instantly.")
+    c3.metric("Extra copies found", f"{dup_count:,}")
+    st.caption("Tip: drag the **Match strictness** slider in the sidebar to find "
+               "more look-alikes or only near-identical images.")
 
     if not clusters:
-        st.success("No near-duplicates found at this threshold.")
+        st.success("No duplicates found at this strictness. Try lowering it in the sidebar.")
         return
 
-    st.markdown("---")
+    st.divider()
+    st.write("Each group below shows one image to **keep** and its likely duplicates. "
+             "Tick the copies you want to remove, then download the cleaned set.")
     for gi, cluster in enumerate(clusters):
-        st.markdown(f"**Group {gi + 1}** · {len(cluster['duplicates'])} duplicate(s)")
+        st.markdown(f"**Group {gi + 1}** — {len(cluster['duplicates'])} possible duplicate(s)")
         cols = st.columns(min(1 + len(cluster["duplicates"]), 4))
-        _render_uploaded(cols[0], cluster["original"], "Original", None)
+        _render_uploaded(cols[0], cluster["original"], "Keep this one", None)
         for di, dup in enumerate(cluster["duplicates"]):
             col = cols[(di + 1) % len(cols)]
             _render_uploaded(col, dup["id"], None, dup["score"])
-        st.markdown("---")
+        st.divider()
 
     _download_deduped(clusters)
 
@@ -110,13 +114,14 @@ def _render_uploaded(col, label, title, score):
     data = st.session_state.mb_images.get(label)
     with col:
         if title:
-            st.markdown(f"*{title}*")
+            st.caption(f"✅ {title}")
         if data:
             st.image(data, width="stretch")
         st.caption(short_path(label))
         if score is not None:
             st.markdown(badge(score), unsafe_allow_html=True)
-            checked = st.checkbox("mark duplicate", value=label in st.session_state.mb_remove,
+            checked = st.checkbox("Remove this copy",
+                                  value=label in st.session_state.mb_remove,
                                   key=f"mb_rm_{label}")
             (st.session_state.mb_remove.add if checked
              else st.session_state.mb_remove.discard)(label)
@@ -132,53 +137,54 @@ def _download_deduped(clusters):
         for lbl in keep:
             zf.writestr(lbl, st.session_state.mb_images[lbl])
     st.download_button(
-        f"⬇ Download deduped set ({len(keep)} kept, {len(remove)} removed)",
-        data=buf.getvalue(), file_name="deduped.zip", mime="application/zip",
+        f"⬇ Download cleaned set ({len(keep)} kept, {len(remove)} removed)",
+        data=buf.getvalue(), file_name="cleaned_images.zip", mime="application/zip",
         type="primary",
     )
 
 
 # --------------------------------------------------------------------------- #
-# Mode A — Search a prebuilt corpus
+# Search by image (uses the sample library)
 # --------------------------------------------------------------------------- #
 def search_tab(bundle):
-    st.markdown("### Search the Corpus")
+    st.subheader("Search by image")
     if not bundle:
-        st.info("No prebuilt corpus is loaded. Configure an artifact bundle "
-                "(see README) or use **Upload & Dedup** instead.")
+        st.info("This searches a built-in sample image library, which isn't loaded "
+                "right now. You can still compare your own images in the "
+                "**Find Duplicates** and **Compare Two** tabs.")
         return
 
+    st.write("Upload a picture to find similar images in the sample library.")
     meta = bundle["meta"]
     ids = [str(x) for x in meta["id"].tolist()]
     row_by_id = {str(r["id"]): r for _, r in meta.iterrows()}
 
-    uploaded = st.file_uploader("Query image", type=["png", "jpg", "jpeg", "bmp", "webp"])
-    top_k = st.number_input("Max results", 1, 100, 24)
+    uploaded = st.file_uploader("Upload a picture", type=["png", "jpg", "jpeg", "bmp", "webp"])
+    top_k = st.slider("How many results to show", 3, 60, 24)
     if not uploaded:
-        st.caption("Upload an image to find its matches in the corpus.")
         return
 
     query = Image.open(io.BytesIO(uploaded.getvalue())).convert("RGB")
-    st.image(query, caption="Query", width=240)
+    st.image(query, caption="Your image", width=220)
 
     with st.spinner("Searching…"):
         results = search_index(bundle["index"], ids, query,
                                threshold=st.session_state.threshold, top_k=int(top_k))
     if not results:
-        st.warning(f"No matches at threshold {st.session_state.threshold:.2f}.")
+        st.warning("No similar images found. Try lowering **Match strictness** in the sidebar.")
         return
 
-    st.success(f"{len(results)} matches")
+    st.success(f"Found {len(results)} similar image(s).")
     _grid([(r["id"], r["score"]) for r in results], bundle, row_by_id)
 
 
 # --------------------------------------------------------------------------- #
-# Mode A — Browse precomputed clusters
+# Duplicate groups already found in the sample library
 # --------------------------------------------------------------------------- #
 def manager_tab(bundle):
-    st.markdown("### Corpus Duplicate Clusters")
+    st.subheader("Duplicate groups in the sample library")
     if not bundle:
-        st.info("No prebuilt corpus is loaded.")
+        st.info("The sample image library isn't loaded right now.")
         return
 
     meta = bundle["meta"]
@@ -187,10 +193,11 @@ def manager_tab(bundle):
     groups = sorted(clustered.groupby("cluster_id"),
                     key=lambda kv: len(kv[1]), reverse=True)
     if not groups:
-        st.success("No duplicate clusters in this corpus.")
+        st.success("No duplicate groups were found in this library.")
         return
 
-    st.info(f"{len(groups)} clusters · {len(clustered)} images")
+    st.write(f"The app already grouped **{len(clustered):,}** library images into "
+             f"**{len(groups):,}** sets of look-alikes. Browse them below.")
     per_page = CFG.CLUSTERS_PER_PAGE
     pages = max(1, (len(groups) - 1) // per_page + 1)
     page = st.session_state.manager_page
@@ -198,17 +205,17 @@ def manager_tab(bundle):
 
     for cid, grp in groups[start:start + per_page]:
         rows = grp.sort_values("is_original", ascending=False)
-        st.markdown(f"**Cluster {cid}** · {len(rows)} images")
+        st.markdown(f"**Group {cid}** — {len(rows)} similar images")
         members = [(str(r["id"]), 1.0 if r["is_original"] else None)
                    for _, r in rows.iterrows()]
         _grid(members, bundle, row_by_id)
-        st.markdown("---")
+        st.divider()
 
     p1, p2, p3 = st.columns([1, 2, 1])
-    if page > 0 and p1.button("← Prev"):
+    if page > 0 and p1.button("← Previous"):
         st.session_state.manager_page -= 1
         st.rerun()
-    p2.markdown(f"<div style='text-align:center'>Page {page + 1}/{pages}</div>",
+    p2.markdown(f"<div style='text-align:center'>Page {page + 1} of {pages}</div>",
                 unsafe_allow_html=True)
     if start + per_page < len(groups) and p3.button("Next →"):
         st.session_state.manager_page += 1
@@ -230,15 +237,15 @@ def _grid(items, bundle, row_by_id):
 
 
 # --------------------------------------------------------------------------- #
-# Versus (always available)
+# Compare two images
 # --------------------------------------------------------------------------- #
 def versus_tab():
-    st.markdown("### Compare Two Images")
+    st.subheader("Compare two images")
+    st.write("Upload any two pictures to see how similar they are.")
     c1, c2 = st.columns(2)
-    f1 = c1.file_uploader("Image 1", type=["png", "jpg", "jpeg", "bmp", "webp"], key="vs1")
-    f2 = c2.file_uploader("Image 2", type=["png", "jpg", "jpeg", "bmp", "webp"], key="vs2")
+    f1 = c1.file_uploader("First image", type=["png", "jpg", "jpeg", "bmp", "webp"], key="vs1")
+    f2 = c2.file_uploader("Second image", type=["png", "jpg", "jpeg", "bmp", "webp"], key="vs2")
     if not (f1 and f2):
-        st.caption("Upload two images for a direct similarity comparison.")
         return
 
     img1 = Image.open(io.BytesIO(f1.getvalue())).convert("RGB")
@@ -250,88 +257,101 @@ def versus_tab():
     with st.spinner("Comparing…"):
         res = compare_two(img1, img2, threshold=st.session_state.threshold)
     if not res:
-        st.error("Comparison failed.")
+        st.error("Sorry, those images couldn't be compared.")
         return
 
     pct = res["similarity"] * 100
-    st.markdown(f"<h1 style='text-align:center;font-family:Cinzel,serif;"
-                f"color:#a855f7'>{pct:.1f}%</h1>", unsafe_allow_html=True)
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Cosine similarity", f"{res['similarity']:.4f}")
-    m2.metric("dHash distance",
-              res["hash_distance"] if res["hash_distance"] is not None else "N/A")
-    m3.metric("Verdict", "MATCH" if res["match"] else "NO MATCH")
+    verdict = ("These look like the same image" if pct >= 90 else
+               "These are quite similar" if pct >= 75 else
+               "These share some features" if pct >= 55 else
+               "These look different")
+    st.markdown(f"<h2 style='text-align:center;color:#c4b5fd'>{pct:.0f}% similar</h2>"
+                f"<p style='text-align:center;color:#aab2c5'>{verdict}</p>",
+                unsafe_allow_html=True)
+    m1, m2 = st.columns(2)
+    m1.metric("Similarity", f"{pct:.0f}%", help="How alike the two images look to the AI model.")
+    m2.metric("Match?", "Yes" if res["match"] else "No",
+              help="Whether they pass your current match-strictness setting.")
 
 
 # --------------------------------------------------------------------------- #
-# Analytics / Calibration
+# Accuracy (the calibration / PR curve, explained plainly)
 # --------------------------------------------------------------------------- #
 def analytics_tab(bundle):
-    st.markdown("### Calibration & Analytics")
+    st.subheader("How accurate is it?")
     if bundle and bundle.get("calibration", {}).get("history"):
         calib = bundle["calibration"]
-        df = pd.DataFrame(calib["history"])
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Optimal threshold", f"{calib['optimal_threshold']:.2f}")
-        c2.metric("F1", f"{calib['f1']:.3f}")
-        c3.metric("GT pairs", f"{calib.get('n_ground_truth_pairs', 0):,}")
+        st.write("There's a trade-off when matching images. Make it **stricter** and "
+                 "almost every flagged match is a true duplicate, but you miss some. "
+                 "Make it **looser** and you catch nearly all duplicates, but a few "
+                 "wrong matches slip in. This chart shows that trade-off, measured on "
+                 f"a benchmark of **{calib.get('n_ground_truth_pairs', 0):,}** known pairs.")
 
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Best balance at strictness", f"{calib['optimal_threshold']:.2f}")
+        c2.metric("Catches (recall)", f"{calib['recall'] * 100:.0f}%",
+                  help="Of all real duplicates, how many it finds at the best setting.")
+        c3.metric("Correct matches (precision)", f"{calib['precision'] * 100:.0f}%",
+                  help="Of everything it flags, how many are truly duplicates.")
+
+        df = pd.DataFrame(calib["history"])
         fig = go.Figure()
-        for col, color in [("f1", "#6366f1"), ("precision", "#10b981"),
-                           ("recall", "#ec4899")]:
-            fig.add_trace(go.Scatter(x=df["threshold"], y=df[col], mode="lines+markers",
-                                     name=col.title(), line=dict(color=color, width=3)))
+        fig.add_trace(go.Scatter(x=df["threshold"], y=df["recall"] * 100,
+                                 mode="lines+markers", name="Catches duplicates (%)",
+                                 line=dict(color="#ec4899", width=3)))
+        fig.add_trace(go.Scatter(x=df["threshold"], y=df["precision"] * 100,
+                                 mode="lines+markers", name="Matches are correct (%)",
+                                 line=dict(color="#34d399", width=3)))
         fig.add_vline(x=calib["optimal_threshold"], line_dash="dash",
-                      line_color="#a855f7", annotation_text="optimal")
-        fig.update_layout(height=420, xaxis_title="Threshold", yaxis_title="Score",
-                          paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#e2e8f0"))
+                      line_color="#c084fc", annotation_text="best balance")
+        fig.update_layout(height=420, xaxis_title="Match strictness",
+                          yaxis_title="Percent", paper_bgcolor="rgba(0,0,0,0)",
+                          plot_bgcolor="rgba(255,255,255,0.03)",
+                          font=dict(color="#e6e9f2"),
+                          legend=dict(orientation="h", y=1.12))
         st.plotly_chart(fig, width="stretch")
-        st.dataframe(df, width="stretch", height=320)
         return
 
     result = st.session_state.mb_result
     if result and result["pairs"]:
-        st.caption("Stateless session has no ground truth — showing the score "
-                   "distribution of detected pairs.")
-        scores = [p["score"] for p in result["pairs"]]
+        st.write("This shows how confident the app was about the matches it found in "
+                 "your uploaded images. The line marks your current strictness setting.")
+        scores = [p["score"] * 100 for p in result["pairs"]]
         fig = go.Figure(go.Histogram(x=scores, nbinsx=30, marker_color="#a855f7"))
-        fig.add_vline(x=st.session_state.threshold, line_dash="dash", line_color="#10b981")
-        fig.update_layout(height=380, xaxis_title="Cosine similarity",
-                          yaxis_title="Pairs", paper_bgcolor="rgba(0,0,0,0)",
-                          font=dict(color="#e2e8f0"))
+        fig.add_vline(x=st.session_state.threshold * 100, line_dash="dash", line_color="#34d399")
+        fig.update_layout(height=380, xaxis_title="Similarity of matched pairs (%)",
+                          yaxis_title="Number of pairs", paper_bgcolor="rgba(0,0,0,0)",
+                          plot_bgcolor="rgba(255,255,255,0.03)", font=dict(color="#e6e9f2"))
         st.plotly_chart(fig, width="stretch")
     else:
-        st.info("Load a corpus bundle, or run a stateless dedup, to see analytics.")
+        st.info("Run **Find Duplicates** on some images, or load the sample library, "
+                "to see accuracy details here.")
 
 
 # --------------------------------------------------------------------------- #
-# Architecture
+# How it works
 # --------------------------------------------------------------------------- #
 def architecture_tab(bundle):
+    st.subheader("How it works")
     st.markdown("""
-### Architecture
+The app spots duplicates in two quick steps:
 
-**Two components, one shared core.** `embedder.py` and `hashing.py` are imported
-by both the offline indexer and this app, so offline and online produce identical
-vectors.
+1. **Quick fingerprint check.** Every image gets a tiny "fingerprint" (a perceptual
+   hash). Identical or barely-changed copies are matched instantly.
+2. **AI look-alike check.** Each image is turned into a list of numbers by an AI
+   vision model (**DINOv2**) that captures *what the picture looks like*. Images with
+   close numbers are flagged as look-alikes — even after cropping, resizing,
+   re-compression, or colour shifts. A fast similarity search (**FAISS**) compares
+   them, and matches are grouped together.
 
-- **Offline indexer (`indexer.py`)** — runs where the dataset (and a GPU) live:
-  embeds the corpus, builds a FAISS index, calibrates the F1-optimal threshold
-  against ground truth, clusters, and writes a portable `./artifacts` bundle
-  (index + thumbnails + calibration + manifest).
-- **Serving app (this)** — CPU-only, no dataset on disk. **Mode A** loads a
-  prebuilt bundle (fetched from local/HF/URL at boot) for Search and cluster
-  browsing. **Mode B** dedups an uploaded batch fully in memory.
-
-**Pipeline:** dHash fast-pass (Hamming ≤ 2) for exact/near-exact pairs →
-DINOv2 embeddings (L2-normalized) → FAISS `IndexFlatIP` (inner product = cosine)
-→ threshold filter → NetworkX connected-components clustering.
+The **Match strictness** slider in the sidebar simply decides how close two images
+must be to count as a match.
     """)
     if bundle:
         m = bundle["manifest"]
-        st.markdown("#### Loaded bundle")
+        st.divider()
+        st.caption("Sample library details")
         c1, c2, c3 = st.columns(3)
         c1.metric("Images", f"{m.get('n_images', 0):,}")
-        c2.metric("Embedding dim", m.get("embedding_dim", "—"))
-        c3.metric("FAISS index", m.get("faiss_type", "—"))
-        st.json(m.get("lib_versions", {}))
+        c2.metric("Model", m.get("model_id", "—").split("/")[-1])
+        c3.metric("Fingerprint size", f"{m.get('embedding_dim', '—')} numbers")
