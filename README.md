@@ -2,6 +2,16 @@
 
 Mirror of Maya finds copies of the same image inside a photo collection, even when the copies have been compressed, cropped, rotated, resized, or recolored. It combines perceptual hashing for exact copies with DINOv2 vision-transformer embeddings for visually modified copies, and it measures its own accuracy whenever the dataset provides ground truth.
 
+## Live demo
+
+The hosted app at [mirrorofmaya.streamlit.app](https://mirrorofmaya.streamlit.app/) starts with a prebuilt index of the INRIA Copydays benchmark (2,826 images), so the dashboard, duplicate groups, and accuracy charts are visible immediately:
+
+- **Search** has one-click sample queries (a heavily cropped copy, a quality-3 JPEG, an unrelated photo) so you can try retrieval without uploading anything.
+- **Compare** accepts any two images from your machine.
+- Upload your own ZIP (up to 500 images on the hosted app) to replace the demo corpus with a live scan of your photos.
+
+The demo index ships with the repo in `demo_bundle/` (precomputed embeddings plus 256px thumbnails) and is rebuilt with `python build_demo_bundle.py`.
+
 ## Features
 
 - Two-stage detection: a dHash pass for exact copies, then DINOv2 embeddings with FAISS range search for modified copies
@@ -30,39 +40,40 @@ Pairs are always compared by full file path. Filenames only ever build the answe
 
 ## Measured accuracy
 
-All numbers below were produced by this exact code on the INRIA Copydays benchmark (157 source images, 2,826 files, 24,021 ground-truth duplicate pairs) using `facebook/dinov2-small` on CPU. They are reproducible with a single scan from the app.
+All numbers below were produced by this exact code on the INRIA Copydays benchmark (157 source images, 2,826 files, 24,021 ground-truth duplicate pairs) on CPU. They are reproducible with a single scan from the app.
 
-**Held-out pairwise metrics** (threshold 0.52, chosen on the calibration half):
+**Held-out pairwise metrics** (threshold chosen on the calibration half, scored on the unseen half):
 
-| Metric | Score |
-| --- | --- |
-| F1 | 0.791 |
-| Precision | 0.758 |
-| Recall | 0.827 |
+| Model | Threshold | F1 | Precision | Recall | Index time (CPU) |
+| --- | --- | --- | --- | --- | --- |
+| dinov2-small | 0.52 | 0.791 | 0.758 | 0.827 | 4 min 20 s |
+| dinov2-base | 0.58 | **0.849** | **0.913** | 0.794 | 16 min 20 s |
 
 **Recall by attack type** (fraction of modified copies traced back to their source image):
 
-| Attack | Recall |
-| --- | --- |
-| JPEG quality 75 | 100% |
-| JPEG quality 50 | 100% |
-| JPEG quality 30 | 100% |
-| JPEG quality 20 | 100% |
-| JPEG quality 15 | 100% |
-| JPEG quality 10 | 100% |
-| JPEG quality 8 | 100% |
-| JPEG quality 5 | 99.4% |
-| JPEG quality 3 | 96.8% |
-| Crop keeping 75% | 100% |
-| Crop keeping 70% | 100% |
-| Crop keeping 60% | 100% |
-| Crop keeping 50% | 100% |
-| Crop keeping 40% | 100% |
-| Crop keeping 30% | 98.7% |
-| Crop keeping 20% | 98.1% |
-| Crop keeping 10% | 84.1% |
+| Attack | dinov2-small | dinov2-base |
+| --- | --- | --- |
+| JPEG quality 75 | 100% | 100% |
+| JPEG quality 50 | 100% | 100% |
+| JPEG quality 30 | 100% | 100% |
+| JPEG quality 20 | 100% | 100% |
+| JPEG quality 15 | 100% | 100% |
+| JPEG quality 10 | 100% | 100% |
+| JPEG quality 8 | 100% | 100% |
+| JPEG quality 5 | 99.4% | 98.7% |
+| JPEG quality 3 | **96.8%** | 82.2% |
+| Crop keeping 75% | 100% | 100% |
+| Crop keeping 70% | 100% | 100% |
+| Crop keeping 60% | 100% | 100% |
+| Crop keeping 50% | 100% | 100% |
+| Crop keeping 40% | 100% | 99.4% |
+| Crop keeping 30% | 98.7% | 97.5% |
+| Crop keeping 20% | 98.1% | 91.7% |
+| Crop keeping 10% | **84.1%** | 75.8% |
 
-Notes for honest reading: at the F1-optimal threshold a few visually similar scenes link into shared groups, which is what limits pairwise precision; raising the threshold slider in the app trades recall for stricter groups. Stage 1 alone catches 735 of the pairs as exact copies. The `dinov2-base` and `dinov2-large` variants are selectable in the app but have not been benchmarked with this pipeline.
+The two models trade off differently: **base** separates distinct but similar scenes much better (precision 0.913 vs 0.758, and its 103 predicted clusters track the 157 true groups far more closely than small's 48), while **small** is clearly stronger on heavily degraded copies (JPEG quality 3, tiny crops) and is 3.8x faster. The hosted demo uses small for CPU speed; pick base when precision matters more than extreme-degradation recall. `dinov2-large` is selectable but has not been benchmarked with this pipeline.
+
+Stage 1 alone catches 735 of the pairs as exact copies. Raising the threshold slider in the app trades recall for stricter groups at any time, without re-scanning.
 
 ## Performance
 
@@ -102,6 +113,8 @@ pip install -r requirements.txt
 ```bash
 streamlit run app.py
 ```
+
+On launch the app preloads the demo corpus if `demo_bundle/` exists. To scan your own images:
 
 1. Pick a dataset in the sidebar: a local folder path, an uploaded ZIP, or a Google Drive link to a ZIP.
 2. Click **Scan for duplicates**. A progress bar tracks indexing.
@@ -150,14 +163,17 @@ The dataset path can also be set with the `MAYA_DATASET_PATH` environment variab
 ## Project structure
 
 ```
-app.py                Streamlit entry point
-config.py             All configuration
-engine.py             Detection engine: hashing, embeddings, FAISS, calibration
-utils.py              Ground truth, pairwise metrics, clustering
-session_manager.py    Streamlit session state and persistence
-ui_components.py      Sidebar, scan flow, threshold control, thumbnails
-tabs.py               The seven UI tabs
-requirements.txt      Dependencies
+app.py                  Streamlit entry point
+config.py               All configuration
+engine.py               Detection engine: hashing, embeddings, FAISS, calibration
+utils.py                Ground truth, pairwise metrics, clustering
+session_manager.py      Streamlit session state and persistence
+ui_components.py        Sidebar, scan flow, demo loading, threshold control
+tabs.py                 The seven UI tabs
+build_demo_bundle.py    Builds demo_bundle/ and demo_samples/ from the dataset
+demo_bundle/            Prebuilt demo index (embeddings, thumbnails, calibration)
+demo_samples/           One-click query images for the Search tab
+requirements.txt        Dependencies
 ```
 
 ## Technology

@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import shutil
 import uuid
+import hashlib
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -299,37 +300,45 @@ def manager_tab():
         return
 
     clusters = _get_clusters()
-    st.info(f"{len(clusters)} groups • "
-            f"{sum(len(c['duplicates']) for c in clusters)} duplicate files. "
-            f"Deleted files are moved to a trash folder, not erased, so you can undo.")
+    demo_mode = st.session_state.get('demo_mode', False)
 
-    if st.session_state.get('last_deletion'):
-        n = len(st.session_state.last_deletion['moves'])
-        if st.button(f"Undo last deletion ({n} files)"):
-            restored = _undo_delete()
-            st.success(f"Restored {restored} files")
+    if demo_mode:
+        st.info(f"{len(clusters)} groups • "
+                f"{sum(len(c['duplicates']) for c in clusters)} duplicate files. "
+                f"This is the built-in demo dataset, so cleanup is disabled. "
+                f"Scan your own images to select and remove copies.")
+    else:
+        st.info(f"{len(clusters)} groups • "
+                f"{sum(len(c['duplicates']) for c in clusters)} duplicate files. "
+                f"Deleted files are moved to a trash folder, not erased, so you can undo.")
+
+        if st.session_state.get('last_deletion'):
+            n = len(st.session_state.last_deletion['moves'])
+            if st.button(f"Undo last deletion ({n} files)"):
+                restored = _undo_delete()
+                st.success(f"Restored {restored} files")
+                st.rerun()
+
+        col1, col2, col3 = st.columns(3)
+        if col1.button("Select all duplicates", width='stretch'):
+            for c in clusters:
+                for d in c['duplicates']:
+                    st.session_state.deletion_queue.add(d['path'])
+            st.rerun()
+        if col2.button("Clear selection", width='stretch'):
+            st.session_state.deletion_queue.clear()
             st.rerun()
 
-    col1, col2, col3 = st.columns(3)
-    if col1.button("Select all duplicates", width='stretch'):
-        for c in clusters:
-            for d in c['duplicates']:
-                st.session_state.deletion_queue.add(d['path'])
-        st.rerun()
-    if col2.button("Clear selection", width='stretch'):
-        st.session_state.deletion_queue.clear()
-        st.rerun()
-
-    queue = st.session_state.deletion_queue
-    if queue:
-        with st.expander(f"Review selection ({len(queue)} files)"):
-            for f in sorted(queue):
-                st.caption(get_short_path(f))
-        if col3.button(f"Move {len(queue)} files to trash", type="primary",
-                       width='stretch'):
-            moved = _soft_delete(list(queue))
-            st.success(f"Moved {moved} files to trash")
-            st.rerun()
+        queue = st.session_state.deletion_queue
+        if queue:
+            with st.expander(f"Review selection ({len(queue)} files)"):
+                for f in sorted(queue):
+                    st.caption(get_short_path(f))
+            if col3.button(f"Move {len(queue)} files to trash", type="primary",
+                           width='stretch'):
+                moved = _soft_delete(list(queue))
+                st.success(f"Moved {moved} files to trash")
+                st.rerun()
 
     st.markdown("---")
 
@@ -356,7 +365,8 @@ def manager_tab():
                 for idx, dup in enumerate(cluster['duplicates']):
                     c = dup_cols[idx % n_cols]
                     _image_card(c, dup['path'], dup['score'])
-                    import hashlib
+                    if demo_mode:
+                        continue
                     key = "del_" + hashlib.md5(dup['path'].encode()).hexdigest()[:12]
                     selected = c.checkbox(
                         "Select for deletion", key=key,
@@ -403,14 +413,35 @@ def search_tab():
                                     key="query_thresh")
         max_results = st.number_input("Max results", 1, 100, 50)
 
-    if not uploaded:
-        return
+    # One-click sample queries (shipped with the repo) so visitors can try
+    # the search without having any images of their own.
+    samples = []
+    if os.path.isdir(config.DEMO_SAMPLES_DIR):
+        samples = sorted(
+            os.path.join(config.DEMO_SAMPLES_DIR, f)
+            for f in os.listdir(config.DEMO_SAMPLES_DIR)
+            if f.lower().endswith(config.SUPPORTED_EXTENSIONS)
+        )
+    if samples and not uploaded:
+        st.caption("No image handy? Try one of these:")
+        sample_cols = st.columns(len(samples))
+        for scol, spath in zip(sample_cols, samples):
+            name = os.path.splitext(os.path.basename(spath))[0]
+            label = name.split("_", 1)[-1].replace("_", " ").capitalize()
+            if scol.button(label, key=f"sample_{name}", width='stretch'):
+                st.session_state.sample_query = spath
 
-    ext = os.path.splitext(uploaded.name)[1] or ".jpg"
-    query_path = os.path.join(config.TEMP_DIR,
-                              f"query_{st.session_state.session_uid}{ext}")
-    with open(query_path, "wb") as f:
-        f.write(uploaded.getbuffer())
+    if uploaded:
+        st.session_state.sample_query = None
+        ext = os.path.splitext(uploaded.name)[1] or ".jpg"
+        query_path = os.path.join(config.TEMP_DIR,
+                                  f"query_{st.session_state.session_uid}{ext}")
+        with open(query_path, "wb") as f:
+            f.write(uploaded.getbuffer())
+    elif st.session_state.get('sample_query') and os.path.exists(st.session_state.sample_query):
+        query_path = st.session_state.sample_query
+    else:
+        return
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -502,11 +533,12 @@ def hash_duplicates_tab():
                                 f"hash distance {dup.get('hash_distance', '?')}")
                     _image_card(col, dup['file1'])
                     _image_card(col, dup['file2'])
-                    if st.button("Move copy to trash", key=f"hash_del_{i + j}"):
-                        moved = _soft_delete([dup['file2']])
-                        if moved:
-                            st.success("Moved to trash (undo in Manager tab)")
-                        st.rerun()
+                    if not st.session_state.get('demo_mode', False):
+                        if st.button("Move copy to trash", key=f"hash_del_{i + j}"):
+                            moved = _soft_delete([dup['file2']])
+                            if moved:
+                                st.success("Moved to trash (undo in Manager tab)")
+                            st.rerun()
         if i + 3 < len(hash_dups):
             st.markdown("---")
 

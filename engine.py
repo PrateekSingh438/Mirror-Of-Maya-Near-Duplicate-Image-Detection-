@@ -307,6 +307,16 @@ class DuplicateDetector:
             "n_gt_pairs": len(gt_pairs),
         }
 
+    # -------------------------------------------------------- bundle loading
+
+    def load_precomputed(self, embeddings, stored_files, hash_bits):
+        """Adopt embeddings computed offline (demo bundle) instead of scanning."""
+        self.embeddings = np.asarray(embeddings, dtype="float32")
+        self.stored_files = list(stored_files)
+        self.hash_bits = np.asarray(hash_bits, dtype="uint8")
+        self.failed_files = []
+        self._rebuild()
+
     # ------------------------------------------------------ delete / restore
 
     def remove_files(self, paths):

@@ -8,7 +8,7 @@ from PIL import Image
 import config
 import engine
 from engine import DuplicateDetector
-from utils import get_dir_size, generate_ground_truth, norm_path
+from utils import get_dir_size, generate_ground_truth, norm_path, walk_image_files
 from session_manager import save_session_state, recalculate_metrics
 
 
@@ -21,6 +21,88 @@ def filter_at_threshold(all_duplicates, threshold):
     """Hash-confirmed pairs are exact copies; the cosine slider never hides them."""
     return [d for d in all_duplicates
             if d.get('method') == 'dHash' or d['score'] >= threshold]
+
+
+# ------------------------------------------------------------- demo bundle
+
+@st.cache_resource(show_spinner="Loading the built-in demo dataset (first visit only)...")
+def _load_demo_corpus(model_id):
+    """Load the prebuilt demo index (embeddings + thumbnails of the copydays
+    benchmark) so the app starts with results instead of an empty screen.
+    Cached per container, so only the first visitor waits."""
+    import json
+    import numpy as np
+
+    bdir = config.DEMO_BUNDLE_DIR
+    embeddings = np.load(os.path.join(bdir, "embeddings.npy"))
+    hash_bits = np.load(os.path.join(bdir, "hash_bits.npy"))
+    with open(os.path.join(bdir, "files.json"), "r") as f:
+        rel_files = json.load(f)
+    with open(os.path.join(bdir, "eval.json"), "r") as f:
+        eval_data = json.load(f)
+
+    corpus_dir = os.path.join(config.TEMP_DIR, "demo_corpus")
+    marker = os.path.join(corpus_dir, ".complete")
+    if not os.path.exists(marker):
+        import shutil
+        if os.path.exists(corpus_dir):
+            shutil.rmtree(corpus_dir)
+        os.makedirs(corpus_dir, exist_ok=True)
+        _safe_extract_zip(os.path.join(bdir, "thumbs.zip"), corpus_dir)
+        with open(marker, "w") as f:
+            f.write("ok")
+
+    files = [os.path.join(corpus_dir, rel) for rel in rel_files]
+
+    detector = DuplicateDetector(model_id, backbone=_load_backbone(model_id))
+    detector.load_precomputed(embeddings, files, hash_bits)
+    detector.optimal_threshold = eval_data["threshold"]
+
+    gt_groups, gt_pairs = generate_ground_truth(corpus_dir)
+    all_duplicates = detector.find_duplicates(config.SCAN_THRESHOLD_FLOOR)
+
+    return {
+        "detector": detector,
+        "dataset_dir": corpus_dir,
+        "gt_groups": gt_groups,
+        "gt_pairs": gt_pairs,
+        "eval": eval_data,
+        "all_duplicates": all_duplicates,
+    }
+
+
+def maybe_load_demo():
+    """On first render with no scan, preload the demo corpus if it exists."""
+    if st.session_state.detector is not None or st.session_state.get("demo_failed"):
+        return
+    bdir = config.DEMO_BUNDLE_DIR
+    if not os.path.isfile(os.path.join(bdir, "embeddings.npy")):
+        return
+    try:
+        demo = _load_demo_corpus(config.DEFAULT_MODEL_ID)
+    except Exception:
+        st.session_state.demo_failed = True
+        return
+
+    thresh = demo["eval"]["threshold"]
+    st.session_state.detector = demo["detector"]
+    st.session_state.demo_mode = True
+    st.session_state.active_dataset_path = demo["dataset_dir"]
+    st.session_state.gt_groups = demo["gt_groups"]
+    st.session_state.gt_pairs = demo["gt_pairs"]
+    st.session_state.eval_summary = demo["eval"]
+    st.session_state.calibration_history = demo["eval"].get("history", [])
+    st.session_state.optimal_thresh = thresh
+    st.session_state.current_slider_val = thresh
+    st.session_state.all_duplicates = demo["all_duplicates"]
+    st.session_state.duplicates = filter_at_threshold(demo["all_duplicates"], thresh)
+    st.session_state.scan_stats = {
+        "total_images": demo["detector"].index.ntotal,
+        "failed_images": 0,
+        "scan_time": 0.0,
+        "duplicates_found": len(st.session_state.duplicates),
+        "demo": True,
+    }
 
 
 def apply_custom_css():
@@ -249,8 +331,21 @@ def _render_dataset_config():
                 os.makedirs(upload_dir, exist_ok=True)
                 try:
                     _safe_extract_zip(uploaded_zip, upload_dir)
-                    st.session_state["active_dataset_path"] = upload_dir
-                    st.success(f"Extracted {get_dir_size(upload_dir):.1f} MB")
+                    n_images = sum(1 for _ in walk_image_files(upload_dir))
+                    if n_images == 0:
+                        shutil.rmtree(upload_dir)
+                        st.error("No images found inside that ZIP.")
+                    elif n_images > config.MAX_UPLOAD_IMAGES:
+                        shutil.rmtree(upload_dir)
+                        st.error(f"That ZIP contains {n_images:,} images. The "
+                                 f"hosted app can handle up to "
+                                 f"{config.MAX_UPLOAD_IMAGES} per scan. Please "
+                                 f"upload a smaller subset, or run the app "
+                                 f"locally for large collections.")
+                    else:
+                        st.session_state["active_dataset_path"] = upload_dir
+                        st.success(f"Extracted {n_images:,} images "
+                                   f"({get_dir_size(upload_dir):.1f} MB)")
                 except ValueError as e:
                     st.error(str(e))
             else:
@@ -270,8 +365,19 @@ def _render_dataset_config():
                     try:
                         with st.spinner("Downloading from Google Drive..."):
                             download_dir = _download_from_gdrive(gdrive_url)
-                        st.session_state["active_dataset_path"] = download_dir
-                        st.success(f"Downloaded {get_dir_size(download_dir):.1f} MB")
+                        n_images = sum(1 for _ in walk_image_files(download_dir))
+                        if n_images > config.MAX_UPLOAD_IMAGES:
+                            import shutil
+                            shutil.rmtree(download_dir)
+                            st.error(f"That archive contains {n_images:,} "
+                                     f"images. The hosted app can handle up to "
+                                     f"{config.MAX_UPLOAD_IMAGES} per scan. Use "
+                                     f"a smaller subset, or run the app locally "
+                                     f"for large collections.")
+                        else:
+                            st.session_state["active_dataset_path"] = download_dir
+                            st.success(f"Downloaded {n_images:,} images "
+                                       f"({get_dir_size(download_dir):.1f} MB)")
                     except Exception as e:
                         st.error(f"Download failed: {e}")
 
@@ -327,6 +433,7 @@ def _run_scan(dataset_path):
     all_dups = detector.find_duplicates(config.SCAN_THRESHOLD_FLOOR)
 
     st.session_state.detector = detector
+    st.session_state.demo_mode = False
     st.session_state.active_dataset_path = dataset_path
     st.session_state.gt_groups = gt_groups
     st.session_state.gt_pairs = gt_pairs
@@ -364,6 +471,12 @@ def _render_session_info():
     st.markdown("### Last scan")
     if st.session_state.get('scan_stats'):
         stats = st.session_state.scan_stats
+        if stats.get('demo'):
+            st.info("Showing the built-in demo dataset (INRIA Copydays, "
+                    f"{stats['total_images']:,} images). Scan your own images "
+                    "to replace it.")
+            st.metric("Duplicate pairs", f"{stats['duplicates_found']:,}")
+            return
         st.metric("Images indexed", f"{stats['total_images']:,}")
         st.metric("Scan time", f"{stats['scan_time']:.1f}s")
         st.metric("Duplicate pairs", f"{stats['duplicates_found']:,}")

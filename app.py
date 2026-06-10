@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime
 import config
 from ui_components import (render_sidebar, render_header, apply_custom_css,
-                           render_threshold_control)
+                           render_threshold_control, maybe_load_demo)
 from tabs import (dashboard_tab, manager_tab, search_tab, analytics_tab,
                   hash_duplicates_tab, versus_tab, architecture_tab, _get_clusters)
 from utils import format_file_size, calculate_wasted_space
@@ -22,6 +22,9 @@ apply_custom_css()
 # Initialize session
 initialize_session_state()
 load_session_state()
+
+# With no scan yet, preload the built-in demo dataset (if bundled)
+maybe_load_demo()
 
 # Sidebar
 render_sidebar()

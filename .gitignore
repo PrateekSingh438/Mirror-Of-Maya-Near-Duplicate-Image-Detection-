@@ -15,7 +15,7 @@ indexes/
 session_state.json
 temp_query.jpg
 _benchmark.py
-_benchmark_results.json
+_benchmark_results*.json
 req.txt
 diagnose.py
 diagnostic_check.py

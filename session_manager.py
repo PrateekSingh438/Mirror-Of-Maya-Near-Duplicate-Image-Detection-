@@ -28,6 +28,7 @@ def initialize_session_state():
         'page': 0,
         'session_uid': uuid.uuid4().hex[:12],
         'active_dataset_path': None,
+        'demo_mode': False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:

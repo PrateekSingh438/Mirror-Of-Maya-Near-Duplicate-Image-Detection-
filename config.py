@@ -33,6 +33,13 @@ SUPPORTED_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff')
 DATASET_PATH = os.environ.get("MAYA_DATASET_PATH", "./dataset_copydays")
 TRASH_DIR_NAME = ".maya_trash"  # soft-deleted files are moved here, never os.remove'd
 
+# Demo bundle (prebuilt index so the deployed app starts with results)
+DEMO_BUNDLE_DIR = "./demo_bundle"
+DEMO_SAMPLES_DIR = "./demo_samples"
+
+# Hosted uploads: embedding runs on the server CPU, so cap batch size
+MAX_UPLOAD_IMAGES = 500
+
 # UI
 CLUSTERS_PER_PAGE = 5
 THUMBNAIL_MAX_SIZE = 384  # px, longest side
