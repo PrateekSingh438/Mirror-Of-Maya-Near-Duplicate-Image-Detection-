@@ -1,15 +1,19 @@
-# For CPU-only deployments (Streamlit Cloud / HF Spaces), install torch from
-# the CPU wheel index to avoid pulling multi-GB CUDA libraries:
+# Flexible lower bounds so the app installs on any Python 3.10-3.13 host
+# (exact pins like torch==2.5.1 have no wheels on newer Python versions and
+# break Streamlit Cloud rebuilds).
+#
+# For CPU-only deployments, torch can be installed from the CPU wheel index
+# to avoid pulling CUDA libraries:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1
-transformers==4.46.0
-pillow==10.4.0
-tqdm==4.67.1
-faiss-cpu==1.9.0
-numpy==1.26.4
-imagehash==4.3.1
-streamlit==1.52.2
-pandas==2.2.3
-plotly==5.24.1
-networkx==3.4.2
-gdown==5.2.0
+torch>=2.5,<3
+transformers>=4.46,<5
+pillow>=10.4
+tqdm>=4.66
+faiss-cpu>=1.9,<2
+numpy>=1.26,<3
+imagehash>=4.3.1,<5
+streamlit>=1.52,<2
+pandas>=2.2,<3
+plotly>=5.24,<7
+networkx>=3.4,<4
+gdown>=5.2,<6
