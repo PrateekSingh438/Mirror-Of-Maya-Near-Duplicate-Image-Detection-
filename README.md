@@ -1,391 +1,186 @@
-# Mirror of Maya v3.0: Near-Duplicate Image Detection
+# Mirror of Maya: Near-Duplicate Image Detection
 
-Advanced near-duplicate image detection system powered by DINOv2 vision transformers and perceptual hashing, designed for production-scale image deduplication workflows.
+Mirror of Maya finds copies of the same image inside a photo collection, even when the copies have been compressed, cropped, rotated, resized, or recolored. It combines perceptual hashing for exact copies with DINOv2 vision-transformer embeddings for visually modified copies, and it measures its own accuracy whenever the dataset provides ground truth.
 
-## Overview
+## Features
 
-Mirror of Maya is a robust image duplicate detection pipeline that combines deep learning embeddings with perceptual hashing to identify visually similar images across various transformations including compression, cropping, rotation, and color adjustments.
+- Two-stage detection: a dHash pass for exact copies, then DINOv2 embeddings with FAISS range search for modified copies
+- Works on any folder of images: a local path, an uploaded ZIP, or a Google Drive link
+- Automatic threshold calibration with a proper holdout split when the dataset has ground truth
+- Duplicate groups built by graph connected components, with the best-quality file suggested as the keeper
+- Reverse image search: upload an image, find its copies in the indexed collection
+- Side-by-side comparison of any two images (embedding similarity plus hash distance)
+- Safe cleanup: selected files are moved to a trash folder with one-click undo, never permanently deleted
 
-The system achieves F1 scores exceeding 0.93 on standard benchmarks while maintaining efficient performance through a dual-stage detection architecture.
+## How it works
 
-## Key Features
+**Stage 1: exact copies.** Every image is reduced to a 256-bit dHash fingerprint (a 16x16 map of brightness gradients). All fingerprints are compared against all others directly. Pairs within a Hamming distance of 2 are exact or near-exact copies, for example the same photo saved at a different JPEG quality.
 
-- **Dual-Stage Detection Pipeline** - Combines dHash for exact duplicates with DINOv2 for semantic similarity
-- **Automatic Threshold Calibration** - F1-optimized threshold selection using ground truth validation
-- **Flexible Clustering Modes** - Conservative basename matching or aggressive semantic clustering
-- **Interactive Web Interface** - Built on Streamlit for accessible deployment
-- **Direct Image Comparison** - Side-by-side similarity analysis with multiple metrics
-- **Real-time Analytics** - Live performance metrics and precision-recall visualization
-- **Batch Management** - Efficient duplicate grouping with smart deletion queues
+**Stage 2: modified copies.** Every image, including the exact copies from Stage 1, is embedded with DINOv2 (CLS token, L2-normalized), processed in batches. A FAISS range search returns every pair whose cosine similarity exceeds the threshold. There is no top-k cutoff, so large duplicate groups are found completely.
 
-## Architecture
+**Grouping.** Detected pairs form a graph; connected components become duplicate groups. The file suggested as the keeper is chosen by image quality (resolution, then file size). Filenames are never used for detection.
 
-### Detection Pipeline
+**Evaluation (benchmark datasets only).** If copies share filenames across folders (the Copydays convention) or carry an `_aug_*` suffix, the app builds ground-truth pairs from that structure and measures itself:
 
-```
-Input Images
-    ↓
-Phase 1: dHash Fast-Pass
-    ├─ Exact duplicates (hash distance ≤ 2)
-    └─ Unique images → Phase 2
-         ↓
-Phase 2: DINOv2 Embeddings
-    ├─ Feature extraction
-    ├─ FAISS similarity search
-    └─ Threshold filtering
-         ↓
-Calibration
-    ├─ Ground truth generation
-    ├─ F1 optimization
-    └─ Optimal threshold selection
-         ↓
-Output: Duplicate clusters
-```
+1. Image groups are split 50/50 into a calibration half and a held-out half.
+2. The threshold is swept from 0.40 to 0.99 in steps of 0.01 and the F1-optimal value is chosen on the calibration half only.
+3. Precision, recall, and F1 are reported on the held-out half, which the calibration never saw.
 
-### Technology Stack
+Pairs are always compared by full file path. Filenames only ever build the answer key; the detector itself never sees them. Scanning an ordinary folder of photos works the same way, just without the accuracy scores.
 
-**Deep Learning Framework**
+## Measured accuracy
 
-- **DINOv2** (Meta AI): Self-supervised vision transformer optimized for visual similarity
-- **Alternative considered**: CLIP (OpenAI) - Rejected due to text-image alignment bias affecting pure visual matching
+All numbers below were produced by this exact code on the INRIA Copydays benchmark (157 source images, 2,826 files, 24,021 ground-truth duplicate pairs) using `facebook/dinov2-small` on CPU. They are reproducible with a single scan from the app.
 
-**Vector Search**
+**Held-out pairwise metrics** (threshold 0.52, chosen on the calibration half):
 
-- **FAISS** (Facebook Research): Efficient similarity search and clustering of dense vectors
-- **Alternative considered**: Annoy - Rejected due to inferior recall on high-dimensional embeddings
+| Metric | Score |
+| --- | --- |
+| F1 | 0.791 |
+| Precision | 0.758 |
+| Recall | 0.827 |
 
-**Perceptual Hashing**
+**Recall by attack type** (fraction of modified copies traced back to their source image):
 
-- **dHash** (Difference Hash): Gradient-based hashing robust to compression artifacts
-- **Alternative considered**: pHash - Rejected due to DCT sensitivity to JPEG quantization
+| Attack | Recall |
+| --- | --- |
+| JPEG quality 75 | 100% |
+| JPEG quality 50 | 100% |
+| JPEG quality 30 | 100% |
+| JPEG quality 20 | 100% |
+| JPEG quality 15 | 100% |
+| JPEG quality 10 | 100% |
+| JPEG quality 8 | 100% |
+| JPEG quality 5 | 99.4% |
+| JPEG quality 3 | 96.8% |
+| Crop keeping 75% | 100% |
+| Crop keeping 70% | 100% |
+| Crop keeping 60% | 100% |
+| Crop keeping 50% | 100% |
+| Crop keeping 40% | 100% |
+| Crop keeping 30% | 98.7% |
+| Crop keeping 20% | 98.1% |
+| Crop keeping 10% | 84.1% |
 
-**Web Framework**
+Notes for honest reading: at the F1-optimal threshold a few visually similar scenes link into shared groups, which is what limits pairwise precision; raising the threshold slider in the app trades recall for stricter groups. Stage 1 alone catches 735 of the pairs as exact copies. The `dinov2-base` and `dinov2-large` variants are selectable in the app but have not been benchmarked with this pipeline.
 
-- **Streamlit**: Rapid prototyping and deployment of ML applications
-- **Alternative considered**: Flask/React - Rejected to minimize frontend complexity
+## Performance
+
+Measured on CPU (no GPU), `dinov2-small`, batch size 16:
+
+| Operation | Result |
+| --- | --- |
+| Indexing 2,826 images (hash + embed) | 4 min 20 s (about 11 images/s) |
+| Threshold calibration (60-step sweep) | 3 s |
+| Single image search | about 1 s |
+
+A CUDA GPU is used automatically when available and speeds up indexing significantly.
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.10 or higher
-- CUDA-capable GPU (recommended) or CPU
-- 8GB RAM minimum (16GB recommended for large datasets)
-
-### Setup
+Requires Python 3.10 or newer.
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/mirror-of-maya
-cd mirror-of-maya
+git clone https://github.com/PrateekSingh438/Mirror-Of-Maya-Near-Duplicate-Image-Detection-
+cd Mirror-Of-Maya-Near-Duplicate-Image-Detection-
 
-# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### GPU Acceleration (Optional)
-
-For CUDA support, ensure PyTorch is installed with GPU libraries:
+For CPU-only deployments (Streamlit Community Cloud, Hugging Face Spaces), install torch from the CPU wheel index first to avoid downloading CUDA libraries:
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
 ```
 
 ## Usage
-
-### Launch Application
 
 ```bash
 streamlit run app.py
 ```
 
-Access the interface at `http://localhost:8501`
+1. Pick a dataset in the sidebar: a local folder path, an uploaded ZIP, or a Google Drive link to a ZIP.
+2. Click **Scan for duplicates**. A progress bar tracks indexing.
+3. Browse results in the tabs:
+   - **Dashboard**: summary metrics, and accuracy charts when ground truth exists
+   - **Manager**: duplicate groups with thumbnails; select files and move them to trash (undo available)
+   - **Search**: upload an image to find its copies in the collection
+   - **Analytics**: full pair listing and score statistics
+   - **Exact Copies**: pairs caught by hashing alone
+   - **Compare**: similarity verdict for any two uploaded images
+   - **How It Works**: the architecture explained inside the app
+4. Adjust the similarity threshold slider at any time; results update without re-scanning.
 
-### First-Time Scan
+Deleted files go to a `.maya_trash` folder inside the dataset, not to permanent deletion, and the most recent deletion can be undone from the Manager tab.
 
-1. Configure dataset path in sidebar (default: `./dataset_copydays`)
-2. Select model variant (Small/Base/Large - see model comparison below)
-3. Click "Scan Database" to initiate full indexing
-4. Review calibration results showing optimal threshold and F1 score
+## Dataset conventions for evaluation
 
-**Performance expectations:**
+Accuracy scores appear only when the dataset structure provides an answer key. Two conventions are recognized:
 
-- 1,000 images: ~30 seconds
-- 10,000 images: ~5 minutes
-- 100,000 images: ~45 minutes
+```
+copydays/                          generated/
+  original/200000.jpg                berlin_1.jpg
+  jpeg/10/200000.jpg                 berlin_1_aug_crop.jpg
+  crops/crop_50_percent/200000.jpg   berlin_1_aug_rot.jpg
+```
 
-### Reviewing Duplicates
+Left: copies share a filename across folders. Right: copies carry an `_aug_*` suffix. Any other folder of images is scanned normally with the accuracy section hidden.
 
-Navigate to the **Manager** tab to:
-
-- Browse duplicate clusters organized by original + variants
-- Use quality metrics to verify correct original identification
-- Select duplicates for batch deletion
-- Execute cleanup with progress tracking
-
-### Search Functionality
-
-The **Search** tab enables:
-
-- Upload query image to find similar matches
-- Adjust similarity threshold dynamically
-- Configure maximum results returned
-- View ranked results with similarity scores
-
-### Direct Comparison
-
-The **Versus** tab provides:
-
-- Upload two images for direct comparison
-- DINOv2 cosine similarity score
-- Perceptual hash distance
-- Visual interpretation of similarity level
+The Copydays benchmark is available from the [INRIA archive](http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php). The crop variants used above are generated with `generate_crop.py`.
 
 ## Configuration
 
-### Model Selection
-
-Edit `config.py` to change the base model:
+Key values in `config.py`:
 
 ```python
-MODEL_ID = "facebook/dinov2-small"  # Options: dinov2-small, dinov2-base, dinov2-large
+DEFAULT_MODEL_ID = "facebook/dinov2-small"   # also: dinov2-base, dinov2-large
+BATCH_SIZE = 16            # images per forward pass
+HASH_SIZE = 16             # 16x16 dHash (256 bits)
+HASH_THRESHOLD = 2         # max Hamming distance for an exact copy
+SCAN_THRESHOLD_FLOOR = 0.40
+DEFAULT_THRESHOLD = 0.75   # used when no ground truth exists for calibration
 ```
 
-**Model Comparison Analysis**
+The dataset path can also be set with the `MAYA_DATASET_PATH` environment variable.
 
-| Model Variant | Parameters | Embedding Dim | Recall (Compressed) | Recall (Overall) | Inference Speed | Memory Usage | Best Use Case               |
-| ------------- | ---------- | ------------- | ------------------- | ---------------- | --------------- | ------------ | --------------------------- |
-| **Small**     | 21M        | 384           | **0.92**            | 0.89             | Fast (1.0x)     | 350MB        | High compression datasets   |
-| **Base**      | 86M        | 768           | 0.85                | **0.91**         | Medium (1.8x)   | 680MB        | Balanced general purpose    |
-| **Large**     | 300M       | 1024          | 0.78                | 0.93             | Slow (3.2x)     | 1.2GB        | High precision requirements |
-
-**Key Observations:**
-
-- **Small model superiority on compressed images**: The limited capacity forces shape-based matching, ignoring JPEG artifacts and texture noise
-- **Base model balance**: Best overall recall with reasonable computational requirements
-- **Large model precision**: Highest precision for subtle distinctions but lower recall on heavily degraded images due to texture bias
-- **Inference speed**: Relative to Small model on GPU (CUDA)
-
-### Model Performance Visualizations
-
-### F1 Score Analysis
-
-##### Large Model
-
-![alt text](<WhatsApp Image 2026-01-24 at 5.02.03 AM.jpeg>)
-
-##### Base Model
-
-![alt text](<Screenshot 2026-01-24 045900.png>)
-
-##### Small Model
-
-![alt text](image.png)
-
-**Recommendation**: Use Small model for datasets with heavy compression (JPEG Q < 20), Base model for general use, Large model when precision is critical and images are high quality.
-
-### Threshold Configuration
-
-```python
-# Calibration sweep range
-CALIBRATION_THRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
-
-# Interactive threshold bounds
-MIN_THRESHOLD = 0.30  # Minimum slider value
-MAX_THRESHOLD = 0.99  # Maximum slider value
-DEFAULT_THRESHOLD = 0.75  # Starting point
-```
-
-### Hash Configuration
-
-```python
-HASH_SIZE = 16  # dHash resolution (16x16 gradient map)
-HASH_THRESHOLD = 2  # Maximum Hamming distance for matches
-USE_DHASH = True  # Enable dHash preprocessing
-```
-
-## Ground Truth Generation
-
-The system automatically generates ground truth pairs for calibration from directory structure:
+## Project structure
 
 ```
-dataset/
-├── original/          # Source images
-│   ├── 200000.jpg
-│   └── 200001.jpg
-└── attacks/           # Modified versions
-    ├── jpeg/
-    │   ├── 200000.jpg  # Matches original/200000.jpg
-    │   └── 200001.jpg
-    └── crop/
-        ├── 200000.jpg
-        └── 200001.jpg
+app.py                Streamlit entry point
+config.py             All configuration
+engine.py             Detection engine: hashing, embeddings, FAISS, calibration
+utils.py              Ground truth, pairwise metrics, clustering
+session_manager.py    Streamlit session state and persistence
+ui_components.py      Sidebar, scan flow, threshold control, thumbnails
+tabs.py               The seven UI tabs
+requirements.txt      Dependencies
 ```
 
-Ground truth pairs are formed by matching basenames across `original/` and other directories.
+## Technology
 
-## Evaluation Metrics
+| Component | Library |
+| --- | --- |
+| Embeddings | DINOv2 via HuggingFace Transformers (PyTorch) |
+| Vector search | FAISS, range search on a flat inner-product index |
+| Exact-copy hashing | imagehash (dHash) |
+| Grouping | NetworkX connected components |
+| Interface | Streamlit and Plotly |
 
-### Precision
+## Design decisions
 
-Percentage of detected pairs that are true duplicates:
-
-```
-Precision = True Positives / (True Positives + False Positives)
-```
-
-High precision minimizes false alarms but may miss some duplicates.
-
-### Recall
-
-Percentage of true duplicates that are detected:
-
-```
-Recall = True Positives / (True Positives + False Negatives)
-```
-
-High recall catches most duplicates but may include false positives.
-
-### F1 Score
-
-Harmonic mean balancing precision and recall:
-
-```
-F1 = 2 × (Precision × Recall) / (Precision + Recall)
-```
-
-Used for automatic threshold selection during calibration.
-
-## Performance Benchmarks
-
-### Speed (10,000 images)
-
-| Operation | Time       |
-| --------- | ---------- |
-| Hashing   | 8s         |
-| Embedding | 120s       |
-| Search    | 2s         |
-| **Total** | **~2 min** |
-
-### Accuracy (COPYDAYS Dataset)
-
-| Attack Type | Small Model | Base Model | Large Model |
-| ----------- | ----------- | ---------- | ----------- |
-| JPEG 75     | 1.000       | 1.000      | 1.000       |
-| JPEG 20     | 0.985       | 0.975      | 0.970       |
-| JPEG 10     | 0.920       | 0.890      | 0.850       |
-| JPEG 5      | 0.840       | 0.780      | 0.720       |
-| JPEG 3      | 0.750       | 0.650      | 0.580       |
-| Crop 50%    | 0.910       | 0.925      | 0.940       |
-| Rotation    | 0.895       | 0.910      | 0.920       |
-| Blur        | 0.880       | 0.905      | 0.915       |
-| Color Shift | 0.870       | 0.895      | 0.910       |
-| **Overall** | **0.894**   | **0.881**  | **0.867**   |
-
-Expected system recall: 0.89+ across all attack types with optimal threshold selection.
-
-## Datasets
-
-Inria copydays dataset: http://web.archive.org/web/20160414091603/https://lear.inrialpes.fr/~jegou/data.php
-
-Crop dataset: https://drive.google.com/drive/folders/1DV-GJaaJw1XFsNEaQb2V2Ccw7ZUth1_g?usp=drive_link
-
-**Dataset Structure:**
-
-```
-copydays/
-├── original/          # 157 original images
-└── attacks/           # Various transformations
-    ├── jpeg/          # JPEG compression (Q=3,5,10,20,75)
-    ├── crop/          # Cropping attacks
-    ├── rotate/        # Rotation attacks
-    └── blur/          # Blur attacks
-```
-
-## Changes from Previous Versions
-
-### v3.0 (Current)
-
-**New Features:**
-
-- Direct image comparison tool (Versus tab)
-- Enhanced calibration visualization with F1 curves
-- Score distribution histograms
-- Detection method breakdown charts
-- Improved ground truth generation using full paths
-- Expanded threshold range (0.30-0.99)
-
-**Bug Fixes:**
-
-- Corrected recall calculation using complete file paths
-- Fixed basename clustering filter application
-- Improved error handling for missing files
-
-**UI Improvements:**
-
-- Mystical "Mirror of Maya" themed interface
-- Real-time metrics dashboard
-- Progressive rendering for large datasets
-- Enhanced similarity badges with gradient styling
-
-### v2.0
-
-**Major Changes:**
-
-- Incremental indexing system for faster re-scans
-- IVF+PQ FAISS indexing (50x speedup on large datasets)
-- Migration from pHash to dHash for better compression robustness
-- Advanced quality metrics (sharpness, entropy, blockiness)
-- DBSCAN clustering for noise handling
-- Enhanced TTA with bilateral filtering and CLAHE
-
-### v1.0
-
-**Initial Release:**
-
-- DINOv2 embedding extraction
-- pHash fast-pass preprocessing
-- NetworkX connected components clustering
-- Basic Streamlit interface
-- Ground truth evaluation framework
-
-## Project Structure
-
-```
-mirror-of-maya/
-├── app.py                 # Streamlit application entry point
-├── config.py              # Configuration parameters
-├── engine.py              # Core detection engine
-├── utils.py               # Clustering and metrics utilities
-├── tabs.py                # UI tab implementations
-├── ui_components.py       # Reusable UI elements
-├── session_manager.py     # Session state management
-└── requirements.txt       # Python dependencies
-```
-
-## Dependencies
-
-Core libraries:
-
-- `torch==2.5.1` - Deep learning framework
-- `transformers==4.46.0` - DINOv2 model loading
-- `faiss-cpu==1.9.0` - Vector similarity search
-- `imagehash==4.3.1` - Perceptual hashing
-- `streamlit==1.52.2` - Web interface
-- `networkx==3.4.2` - Graph-based clustering
-- `plotly==5.24.1` - Interactive visualizations
-
-See `requirements.txt` for complete dependency list.
+- **DINOv2 over CLIP**: CLIP embeddings are shaped by text alignment, which hurts pure visual matching; DINOv2 is self-supervised on images alone.
+- **Range search over top-k**: top-k search silently truncates large duplicate groups; range search returns every pair above the threshold.
+- **Every image is embedded**, including exact copies found by hashing, so every file stays searchable and groups stay complete.
+- **Calibration with a holdout split**: the threshold is tuned and the score is reported on disjoint halves of the data, so the reported F1 is a test score, not a training score.
+- **Soft deletion**: cleanup moves files to a trash folder with undo; the index updates immediately so search never returns deleted files.
 
 ## Acknowledgments
 
-- Meta AI for DINOv2 vision transformer architecture
-- Facebook Research for FAISS vector search library
-- Streamlit for the interactive application framework
-- INRIA for the COPYDAYS benchmark dataset
-
-
+- Meta AI for DINOv2
+- Facebook Research for FAISS
+- INRIA for the Copydays benchmark
+- Streamlit for the application framework

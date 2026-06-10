@@ -1,17 +1,15 @@
+# For CPU-only deployments (Streamlit Cloud / HF Spaces), install torch from
+# the CPU wheel index to avoid pulling multi-GB CUDA libraries:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 torch==2.5.1
-torchvision==0.20.1
 transformers==4.46.0
 pillow==10.4.0
-opencv-python==4.10.0.84
 tqdm==4.67.1
 faiss-cpu==1.9.0
 numpy==1.26.4
-scikit-learn==1.6.0
 imagehash==4.3.1
 streamlit==1.52.2
 pandas==2.2.3
 plotly==5.24.1
 networkx==3.4.2
-scipy==1.14.1
-matplotlib
 gdown==5.2.0

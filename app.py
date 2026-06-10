@@ -1,15 +1,18 @@
 import streamlit as st
 from datetime import datetime
 import config
-from ui_components import render_sidebar, render_header, apply_custom_css, render_threshold_control
-from tabs import dashboard_tab, manager_tab, search_tab, analytics_tab, hash_duplicates_tab, versus_tab, architecture_tab
-from utils import format_file_size, organize_clusters, calculate_wasted_space
-from session_manager import initialize_session_state, load_session_state
+from ui_components import (render_sidebar, render_header, apply_custom_css,
+                           render_threshold_control)
+from tabs import (dashboard_tab, manager_tab, search_tab, analytics_tab,
+                  hash_duplicates_tab, versus_tab, architecture_tab, _get_clusters)
+from utils import format_file_size, calculate_wasted_space
+from session_manager import (initialize_session_state, load_session_state,
+                             recalculate_metrics)
 
 # Page config
 st.set_page_config(
-    page_title="Mirror of Maya", 
-    layout=config.LAYOUT, 
+    page_title="Mirror of Maya",
+    layout=config.LAYOUT,
     initial_sidebar_state="expanded"
 )
 
@@ -32,24 +35,23 @@ if st.session_state.detector and st.session_state.all_duplicates:
 
 # Status bar
 if st.session_state.detector:
-    visible_dups = st.session_state.duplicates
-    
-    clustering_mode = st.session_state.get('clustering_mode', config.CLUSTERING_MODE)
-    clusters = organize_clusters(visible_dups, mode=clustering_mode)
-    
+    clusters = _get_clusters()
     unique_duplicates = sum(len(c['duplicates']) for c in clusters)
-    waste = calculate_wasted_space(visible_dups)
-    
+    waste = calculate_wasted_space(st.session_state.duplicates)
+    metrics = recalculate_metrics(st.session_state.current_slider_val)
+
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("DUPLICATE FILES", f"{unique_duplicates:,}")
-    col2.metric("WASTED SPACE", format_file_size(waste * 1024 * 1024))
-    col3.metric("F1 SCORE", f"{st.session_state.f1_score:.4f}")
-    col4.metric("THRESHOLD", f"{st.session_state.current_slider_val:.2f}")
+    col1.metric("Duplicate files", f"{unique_duplicates:,}")
+    col2.metric("Space used by copies", format_file_size(waste * 1024 * 1024))
+    col3.metric("F1 score", f"{metrics['f1']:.4f}" if metrics else "N/A",
+                help=None if metrics else "Needs a dataset with ground truth")
+    col4.metric("Threshold", f"{st.session_state.current_slider_val:.2f}")
 
 st.markdown("---")
 
 # Tabs
-tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics", "Hash Duplicates", "Versus", "Architecture"])
+tabs = st.tabs(["Dashboard", "Manager", "Search", "Analytics",
+                "Exact Copies", "Compare", "How It Works"])
 
 with tabs[0]:
     dashboard_tab()
@@ -75,11 +77,11 @@ with tabs[6]:
 # Footer
 st.markdown("---")
 st.markdown(f"""
-<div style='text-align: center; font-family: "Inter", sans-serif; color: #64748b; padding: 1.5rem; font-size: 0.875rem;'>
-    <div style='margin-bottom: 0.5rem; color: #6366f1; font-weight: 600; font-family: "Space Grotesk", sans-serif;'>
+<div style='text-align: center; color: #64748b; padding: 1.5rem; font-size: 0.875rem;'>
+    <div style='margin-bottom: 0.5rem; color: #6366f1; font-weight: 600;'>
         MIRROR OF MAYA
     </div>
-    <div>Near-Duplicate Detection System</div>
+    <div>Near-duplicate image detection</div>
     <div style='margin-top: 0.5rem; opacity: 0.6;'>{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
 </div>
 """, unsafe_allow_html=True)

@@ -1,268 +1,349 @@
 import os
-import torch
-import faiss
+import random
+
 import numpy as np
+import faiss
+import torch
+import torch.nn.functional as F
 import imagehash
 from PIL import Image
-from tqdm import tqdm
-from collections import defaultdict
-import warnings
 from transformers import AutoImageProcessor, AutoModel
-import config
 
-warnings.filterwarnings('ignore')
+import config
+from utils import walk_image_files, norm_path, pair_key, pair_metrics
+
+# Lookup table for counting set bits in a byte (Hamming distance on packed hashes)
+_POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
+
+
+def load_backbone(model_id):
+    """Load the DINOv2 processor + model once. The UI wraps this in st.cache_resource."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    processor = AutoImageProcessor.from_pretrained(model_id)
+    model = AutoModel.from_pretrained(model_id).eval().to(device)
+    return processor, model, device
+
 
 class DuplicateDetector:
-    def __init__(self):
-        print(f"Initializing on {config.DEVICE}")
-        self.device = config.DEVICE
-        
-        self.processor = AutoImageProcessor.from_pretrained(config.MODEL_ID)
-        self.model = AutoModel.from_pretrained(config.MODEL_ID).to(self.device)
-        self.model.eval()
-        
+    """Two-stage near-duplicate detector.
+
+    Stage 1: 256-bit dHash, exact all-pairs Hamming comparison (no bucketing,
+             no misses). Hash matches are annotations - every image is still
+             embedded and indexed, so hash-matched files remain searchable.
+    Stage 2: DINOv2 CLS-token embeddings, L2-normalized, FAISS range search
+             (returns ALL pairs above the floor threshold - no top-k cap).
+    """
+
+    def __init__(self, model_id, backbone=None):
+        self.model_id = model_id
+        self.processor, self.model, self.device = backbone or load_backbone(model_id)
         self.dimension = self.model.config.hidden_size
-        self.index = faiss.IndexFlatIP(self.dimension)
-        
+
+        self.embeddings = np.zeros((0, self.dimension), dtype="float32")
         self.stored_files = []
-        self.hash_buckets = defaultdict(list)
-        self.fast_duplicates = []
+        self.hash_bits = np.zeros((0, (config.HASH_SIZE ** 2) // 8), dtype="uint8")
+        self.index = faiss.IndexFlatIP(self.dimension)
+
+        self.fast_duplicates = []      # hash-confirmed pairs (threshold-independent)
+        self.semantic_pairs = []       # all embedding pairs >= SCAN_THRESHOLD_FLOOR
+        self.failed_files = []
         self.optimal_threshold = config.DEFAULT_THRESHOLD
-    
-    def _generate_embedding(self, image_path):
+
+    # ------------------------------------------------------------------ embed
+
+    @torch.inference_mode()
+    def _embed_images(self, images):
+        inputs = self.processor(images=images, return_tensors="pt").to(self.device)
+        hidden = self.model(**inputs).last_hidden_state
+        vectors = F.normalize(hidden[:, 0], dim=-1)  # CLS token
+        return vectors.cpu().numpy().astype("float32")
+
+    def _embed_path(self, image_path):
         try:
-            img = Image.open(image_path).convert("RGB")
-            inputs = self.processor(images=img, return_tensors="pt").to(self.device)
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                embeddings = outputs.last_hidden_state.mean(dim=1)
-                vector = embeddings.detach().cpu().numpy().astype('float32')
-                faiss.normalize_L2(vector)
-            
-            return vector
-        except (OSError, RuntimeError, ValueError):
+            with Image.open(image_path) as im:
+                img = im.convert("RGB")
+            return self._embed_images([img])
+        except Exception:
             return None
 
-    def _compute_hash(self, image_path):
-        try:
-            img = Image.open(image_path).convert('RGB')
-            return str(imagehash.dhash(img, hash_size=config.HASH_SIZE))
-        except (OSError, ValueError):
-            return None
-    
-    def bulk_index(self, folder):
-        if not os.path.exists(folder):
+    # ------------------------------------------------------------------ index
+
+    def bulk_index(self, folder, progress_cb=None):
+        """Hash + embed every readable image under `folder` in true batches."""
+        files = sorted(walk_image_files(folder))
+        total = len(files)
+        if total == 0:
             return
-        
-        from utils import walk_image_files
-        files = list(walk_image_files(folder))
-        print(f" Found {len(files)} images")
-        
-        #Hash-based fast detection
-        print(f"Phase 1: Hashing...")
-        files_for_dino = []
-        
-        for f in tqdm(files, desc="Hashing"):
-            h = self._compute_hash(f)
-            if not h:
-                continue
-            
-            bucket = h[:4]
-            found = False
-            
-            for exist_h, exist_f in self.hash_buckets[bucket]:
-                dist = imagehash.hex_to_hash(h) - imagehash.hex_to_hash(exist_h)
-                if dist <= config.HASH_THRESHOLD:
-                    self.fast_duplicates.append({
-                        "file1": exist_f,
-                        "file2": f,
-                        "score": 0.99,
-                        "method": "dHash"
-                    })
-                    found = True
-                    break
-            
-            if not found:
-                self.hash_buckets[bucket].append((h, f))
-                files_for_dino.append(f)
-        
-        # Phase 2: Embedding
-        if files_for_dino:
-            print(f" Phase 2: Embedding ({len(files_for_dino)} unique)...")
-            batch_vecs = []
-            batch_files = []
-            
-            for f in tqdm(files_for_dino, desc="Embedding"):
-                vec = self._generate_embedding(f)
-                if vec is not None:
-                    batch_vecs.append(vec)
-                    batch_files.append(f)
-                    
-                    if len(batch_vecs) >= config.BATCH_SIZE:
-                        self.index.add(np.vstack(batch_vecs))
-                        self.stored_files.extend(batch_files)
-                        batch_vecs = []
-                        batch_files = []
-            
-            if batch_vecs:
-                self.index.add(np.vstack(batch_vecs))
-                self.stored_files.extend(batch_files)
-        
-        print(f"Indexed {self.index.ntotal} images")
 
-    def calibrate_threshold(self, dataset_path):
-        print(" Calibrating threshold...")
-        
-        from utils import generate_ground_truth, normalize_pair_fullpath
-        
-        gt_pairs = generate_ground_truth(dataset_path)
-        
-        if not gt_pairs:
-            print(" No ground truth")
-            return config.DEFAULT_THRESHOLD, 0.0, [], []
-        
-        print(f" Ground truth: {len(gt_pairs)} pairs")
-        
-        best_f1 = -1
-        best_thresh = config.DEFAULT_THRESHOLD
-        history = []
-        
-        min_thresh = min(config.CALIBRATION_THRESHOLDS)
-        all_duplicates = self._find_duplicates_internal(threshold=min_thresh, silent=True)
-        
-        print(f"\n Found {len(all_duplicates)} pairs at threshold {min_thresh}")
-        
-        gt_set = set(normalize_pair_fullpath(p) for p in gt_pairs)
-        
-        for thresh in config.CALIBRATION_THRESHOLDS:
-            filtered = [d for d in all_duplicates if d['score'] >= thresh]
-            
-            det_set = set(normalize_pair_fullpath((d['file1'], d['file2'])) for d in filtered)
-            
-            tp = len(det_set.intersection(gt_set))
-            fp = len(det_set - gt_set)
-            fn = len(gt_set - det_set)
-            
-            prec = tp / (tp + fp + config.EPSILON) if (tp + fp) > 0 else 0
-            rec = tp / (tp + fn + config.EPSILON) if (tp + fn) > 0 else 0
-            f1 = 2 * (prec * rec) / (prec + rec + config.EPSILON) if (prec + rec) > 0 else 0
-            
-            history.append({
-                "threshold": thresh,
-                "f1": f1,
-                "precision": prec,
-                "recall": rec,
-                "count": len(filtered),
-                "tp": tp,
-                "fp": fp,
-                "fn": fn
-            })
-            
-            print(f"  {thresh:.2f}: F1={f1:.4f}, P={prec:.4f}, R={rec:.4f}, "
-                  f"Det={len(filtered)}, TP={tp}, FP={fp}, FN={fn}")
-            
-            if f1 >= best_f1:
-                best_f1 = f1
-                best_thresh = thresh
-        
-        print(f"\n Optimal: {best_thresh:.2f} (F1: {best_f1:.4f})")
-        self.optimal_threshold = best_thresh
-        
-        return best_thresh, best_f1, history, gt_pairs
-    
-    def _find_duplicates_internal(self, threshold, silent=False):
-        duplicates = list(self.fast_duplicates)
-        
-        if self.index.ntotal < 2:
-            return duplicates
-        
-        chunk_size = 1000
-        k = 20
-        seen_pairs = set()
-        
-        iterator = range(0, self.index.ntotal, chunk_size)
-        if not silent:
-            iterator = tqdm(iterator, desc="Finding duplicates")
-        
-        for start in iterator:
-            end = min(start + chunk_size, self.index.ntotal)
-            vecs = self.index.reconstruct_n(start, end - start)
-            D, I = self.index.search(vecs, k)
-            
-            for i in range(len(vecs)):
-                abs_i = start + i
-                
-                for j in range(1, k):
-                    score = float(D[i][j])
-                    idx_n = int(I[i][j])
-                    
-                    if idx_n == -1 or abs_i == idx_n:
+        all_vecs, all_files, all_hashes = [], [], []
+        batch_imgs, batch_paths, batch_hashes = [], [], []
+
+        def flush():
+            if not batch_imgs:
+                return
+            try:
+                vecs = self._embed_images(batch_imgs)
+                all_vecs.append(vecs)
+                all_files.extend(batch_paths)
+                all_hashes.extend(batch_hashes)
+            except Exception:
+                # One bad batch should not kill the scan: retry image by image.
+                for img, path, hbits in zip(batch_imgs, batch_paths, batch_hashes):
+                    try:
+                        all_vecs.append(self._embed_images([img]))
+                        all_files.append(path)
+                        all_hashes.append(hbits)
+                    except Exception:
+                        self.failed_files.append(path)
+            batch_imgs.clear()
+            batch_paths.clear()
+            batch_hashes.clear()
+
+        for n, path in enumerate(files, 1):
+            try:
+                with Image.open(path) as im:
+                    img = im.convert("RGB")
+                hbits = np.packbits(imagehash.dhash(img, hash_size=config.HASH_SIZE).hash)
+            except Exception:
+                self.failed_files.append(path)
+                continue
+
+            batch_imgs.append(img)
+            batch_paths.append(path)
+            batch_hashes.append(hbits)
+            if len(batch_imgs) >= config.BATCH_SIZE:
+                flush()
+            if progress_cb:
+                progress_cb("Indexing images", n, total)
+        flush()
+
+        if not all_files:
+            return
+
+        self.embeddings = np.vstack(all_vecs)
+        self.stored_files = all_files
+        self.hash_bits = np.stack(all_hashes)
+        self.index = faiss.IndexFlatIP(self.dimension)
+        self.index.add(self.embeddings)
+
+        if progress_cb:
+            progress_cb("Comparing images", 0, 1)
+        self._find_hash_duplicates()
+        self.semantic_pairs = self._find_semantic_pairs(config.SCAN_THRESHOLD_FLOOR)
+        if progress_cb:
+            progress_cb("Comparing images", 1, 1)
+
+    # ------------------------------------------------------- stage 1: hashing
+
+    def _find_hash_duplicates(self):
+        """Exact all-pairs Hamming comparison on packed dHash bits."""
+        self.fast_duplicates = []
+        n = self.hash_bits.shape[0]
+        if n < 2:
+            return
+        bits_total = config.HASH_SIZE ** 2
+        chunk = 512
+        for start in range(0, n, chunk):
+            block = self.hash_bits[start:start + chunk]
+            # (chunk, n) Hamming distances via XOR + popcount lookup
+            dists = _POPCOUNT[block[:, None, :] ^ self.hash_bits[None, :, :]].sum(axis=2)
+            rows, cols = np.nonzero(dists <= config.HASH_THRESHOLD)
+            for r, c in zip(rows, cols):
+                i, j = start + int(r), int(c)
+                if j <= i:
+                    continue
+                dist = int(dists[r, c])
+                self.fast_duplicates.append({
+                    "file1": self.stored_files[i],
+                    "file2": self.stored_files[j],
+                    "score": 1.0 - dist / bits_total,
+                    "hash_distance": dist,
+                    "method": "dHash",
+                })
+
+    # ----------------------------------------------------- stage 2: semantic
+
+    def _find_semantic_pairs(self, threshold):
+        """All embedding pairs with cosine >= threshold, via FAISS range search."""
+        pairs = []
+        n = self.index.ntotal
+        if n < 2:
+            return pairs
+        chunk = 512
+        for start in range(0, n, chunk):
+            block = self.embeddings[start:start + chunk]
+            lims, D, I = self.index.range_search(block, float(threshold))
+            for bi in range(block.shape[0]):
+                i = start + bi
+                for pos in range(lims[bi], lims[bi + 1]):
+                    j = int(I[pos])
+                    if j <= i:  # dedupe (i, j)/(j, i) and skip self-match
                         continue
-                    
-                    if score >= threshold:
-                        f1 = self.stored_files[abs_i]
-                        f2 = self.stored_files[idx_n]
-                        
-                        if f1 == f2:
-                            continue
-                        
-                        pair = tuple(sorted((f1, f2)))
-                        if pair not in seen_pairs:
-                            duplicates.append({
-                                "file1": f1,
-                                "file2": f2,
-                                "score": score,
-                                "method": "DINOv2"
-                            })
-                            seen_pairs.add(pair)
-        
-        return duplicates
-    
+                    pairs.append({
+                        "file1": self.stored_files[i],
+                        "file2": self.stored_files[j],
+                        "score": float(D[pos]),
+                        "method": "DINOv2",
+                    })
+        return pairs
+
+    # ------------------------------------------------------------ public API
+
     def find_duplicates(self, threshold=None):
-        t = threshold if threshold is not None else self.optimal_threshold
-        return self._find_duplicates_internal(t)
-    
+        """Semantic pairs above threshold, merged with hash pairs.
+
+        Hash pairs are found by Hamming distance, so the cosine threshold
+        never filters them out.
+        """
+        t = self.optimal_threshold if threshold is None else threshold
+        results = [p for p in self.semantic_pairs if p["score"] >= t]
+        seen = {pair_key(p["file1"], p["file2"]) for p in results}
+        for p in self.fast_duplicates:
+            if pair_key(p["file1"], p["file2"]) not in seen:
+                results.append(p)
+        return results
+
     def find_matches_for_file(self, file_path, threshold=None, top_k=50):
-        threshold = threshold or self.optimal_threshold
-        
-        vec = self._generate_embedding(file_path)
+        threshold = self.optimal_threshold if threshold is None else threshold
+        if self.index.ntotal == 0:
+            return []
+        vec = self._embed_path(file_path)
         if vec is None:
             return []
-        
         D, I = self.index.search(vec, min(top_k, self.index.ntotal))
-        
         results = []
         for score, idx in zip(D[0], I[0]):
             if idx != -1 and score >= threshold:
                 results.append({
-                    "path": self.stored_files[idx],
+                    "path": self.stored_files[int(idx)],
                     "score": float(score),
-                    "method": "DINOv2"
+                    "method": "DINOv2",
                 })
-        
         return results
-    
+
     def compare_two_images(self, img1_path, img2_path):
-        vec1 = self._generate_embedding(img1_path)
-        vec2 = self._generate_embedding(img2_path)
-        
+        vec1 = self._embed_path(img1_path)
+        vec2 = self._embed_path(img2_path)
         if vec1 is None or vec2 is None:
             return None
-        
-        #Cosine similarity
+
         similarity = float(np.dot(vec1[0], vec2[0]))
-        
-        #Hash similarity
-        h1 = self._compute_hash(img1_path)
-        h2 = self._compute_hash(img2_path)
-        
+
         hash_dist = None
-        if h1 and h2:
-            hash_dist = imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2)
-        
+        try:
+            with Image.open(img1_path) as im1, Image.open(img2_path) as im2:
+                h1 = imagehash.dhash(im1.convert("RGB"), hash_size=config.HASH_SIZE)
+                h2 = imagehash.dhash(im2.convert("RGB"), hash_size=config.HASH_SIZE)
+            hash_dist = h1 - h2
+        except Exception:
+            pass
+
         return {
             "similarity": similarity,
             "hash_distance": hash_dist,
-            "match": similarity >= self.optimal_threshold
+            "match": similarity >= self.optimal_threshold,
         }
+
+    # ------------------------------------------------------------ calibration
+
+    def calibrate_threshold(self, gt_groups, gt_pairs):
+        """Pick the F1-optimal threshold on half the ground-truth groups,
+        report honest metrics on the held-out half.
+
+        Groups (not pairs) are split so pairs of the same source image never
+        leak across the calibration/holdout boundary. Within each split, only
+        pairs whose BOTH endpoints belong to that split's files are scored.
+        """
+        if not gt_pairs:
+            return None
+
+        group_ids = sorted(gt_groups)
+        rng = random.Random(config.CALIBRATION_SEED)
+        rng.shuffle(group_ids)
+        half = max(1, len(group_ids) // 2)
+        calib_files = {f for g in group_ids[:half] for f in gt_groups[g]}
+        holdout_files = {f for g in group_ids[half:] for f in gt_groups[g]}
+
+        thresholds = np.round(np.arange(
+            config.CALIBRATION_SWEEP_START,
+            config.CALIBRATION_SWEEP_STOP + config.CALIBRATION_SWEEP_STEP / 2,
+            config.CALIBRATION_SWEEP_STEP,
+        ), 2)
+
+        hash_keys = {pair_key(p["file1"], p["file2"]) for p in self.fast_duplicates}
+        sem_sorted = sorted(self.semantic_pairs, key=lambda p: p["score"])
+        sem_keys = [pair_key(p["file1"], p["file2"]) for p in sem_sorted]
+        sem_scores = np.array([p["score"] for p in sem_sorted])
+
+        history = []
+        calib_rows = []
+        for t in thresholds:
+            start = int(np.searchsorted(sem_scores, t))
+            det = set(sem_keys[start:]) | hash_keys
+            full = pair_metrics(det, gt_pairs)
+            calib = pair_metrics(det, gt_pairs, restrict=calib_files)
+            history.append({
+                "threshold": float(t),
+                "f1": full["f1"], "precision": full["precision"], "recall": full["recall"],
+                "count": len(det), "tp": full["tp"], "fp": full["fp"], "fn": full["fn"],
+            })
+            calib_rows.append((float(t), calib["f1"]))
+
+        best_f1 = max(f1 for _, f1 in calib_rows)
+        tied = [t for t, f1 in calib_rows if f1 == best_f1]
+        best_thresh = float(tied[len(tied) // 2])  # median of the tied plateau
+        self.optimal_threshold = best_thresh
+
+        start = int(np.searchsorted(sem_scores, best_thresh))
+        det_best = set(sem_keys[start:]) | hash_keys
+        holdout = pair_metrics(det_best, gt_pairs, restrict=holdout_files)
+
+        return {
+            "threshold": best_thresh,
+            "calibration_f1": best_f1,
+            "holdout": holdout,
+            "history": history,
+            "n_groups": len(group_ids),
+            "n_gt_pairs": len(gt_pairs),
+        }
+
+    # ------------------------------------------------------ delete / restore
+
+    def remove_files(self, paths):
+        """Drop files from the index and pair lists. Returns a payload that
+        restore_files() can use to undo the removal without re-embedding."""
+        targets = {norm_path(p) for p in paths}
+        keep, removed_idx = [], []
+        for i, f in enumerate(self.stored_files):
+            (removed_idx if norm_path(f) in targets else keep).append(i)
+        if not removed_idx:
+            return None
+
+        payload = {
+            "files": [self.stored_files[i] for i in removed_idx],
+            "vecs": self.embeddings[removed_idx].copy(),
+            "hashes": self.hash_bits[removed_idx].copy(),
+        }
+        self.embeddings = self.embeddings[keep]
+        self.stored_files = [self.stored_files[i] for i in keep]
+        self.hash_bits = self.hash_bits[keep]
+        self._rebuild()
+        return payload
+
+    def restore_files(self, payload):
+        if not payload:
+            return
+        self.embeddings = np.vstack([self.embeddings, payload["vecs"]])
+        self.stored_files = self.stored_files + list(payload["files"])
+        self.hash_bits = np.vstack([self.hash_bits, payload["hashes"]])
+        self._rebuild()
+
+    def _rebuild(self):
+        self.index = faiss.IndexFlatIP(self.dimension)
+        if len(self.stored_files):
+            self.index.add(self.embeddings)
+        self._find_hash_duplicates()
+        self.semantic_pairs = (
+            self._find_semantic_pairs(config.SCAN_THRESHOLD_FLOOR)
+            if len(self.stored_files) >= 2 else []
+        )

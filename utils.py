@@ -1,159 +1,238 @@
 import os
-import networkx as nx
+import re
+import itertools
 from collections import defaultdict
+
+import networkx as nx
+from PIL import Image
+
 import config
 
+
+# ----------------------------------------------------------------- paths
+
+def norm_path(p):
+    """Canonical form used everywhere paths are compared."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(p)))
+
+
+def pair_key(f1, f2):
+    return tuple(sorted((norm_path(f1), norm_path(f2))))
+
+
 def walk_image_files(folder):
-    for root, _, files in os.walk(folder):
+    for root, dirs, files in os.walk(folder):
+        # never index soft-deleted files
+        dirs[:] = [d for d in dirs if d != config.TRASH_DIR_NAME]
         for f in files:
             if f.lower().endswith(config.SUPPORTED_EXTENSIONS):
                 yield os.path.join(root, f)
 
-def normalize_pair_fullpath(pair):
-    b1 = os.path.splitext(os.path.basename(pair[0]))[0]
-    b2 = os.path.splitext(os.path.basename(pair[1]))[0]
-    return tuple(sorted((b1, b2)))
-
-def is_original_file(filepath):
-    normalized = filepath.replace('\\', '/')
-    return 'original' in normalized.lower().split('/')
 
 def get_basename_without_ext(filepath):
     return os.path.splitext(os.path.basename(filepath))[0]
 
+
+def is_original_file(filepath):
+    return 'original' in norm_path(filepath).replace('\\', '/').lower().split('/')
+
+
+# ----------------------------------------------------------- ground truth
+
+# Filenames are used ONLY here, to build the evaluation ground truth.
+# Detection itself never looks at filenames.
+
+_AUG_SUFFIX = re.compile(r'_aug_[a-z0-9]+$', re.IGNORECASE)
+
+
+def source_id(filepath):
+    """Which source image does this file derive from?
+
+    Convention 1 (copydays): copies keep the same basename in different
+    folders, e.g. original/200000.jpg and jpeg/10/200000.jpg.
+    Convention 2 (generated sets): copies append an _aug_* suffix,
+    e.g. berlin_1_aug_crop.jpg derives from berlin_1.jpg.
+    """
+    return _AUG_SUFFIX.sub('', get_basename_without_ext(filepath))
+
+
 def generate_ground_truth(dataset_path):
-    files = list(walk_image_files(dataset_path))
-    
-    originals = {}
-    attacks = defaultdict(list)
-    
-    print(f"\nAnalyzing {len(files)} files...")
-    
-    for f in files:
-        basename = get_basename_without_ext(f)
-        
-        if is_original_file(f):
-            originals[basename] = f
-        else:
-            attacks[basename].append(f)
-    
-    # Generate pairs
-    pairs = []
-    for basename, original_path in originals.items():
-        if basename in attacks:
-            for attack_path in attacks[basename]:
-                pairs.append((original_path, attack_path))
-    
-    print(f"Ground Truth: {len(originals)} originals, {len(pairs)} pairs")
-    
+    """Return (groups, gt_pairs).
+
+    groups: source-id -> set of normalized full paths (only groups with 2+
+    files). gt_pairs: every within-group pair (the full closure - an attack
+    matching another attack of the same source is a correct detection).
+    Returns (None, None) when the dataset has no recognizable structure,
+    in which case the UI hides evaluation instead of showing a fake score.
+    """
+    groups = defaultdict(set)
+    for f in walk_image_files(dataset_path):
+        groups[source_id(f)].add(norm_path(f))
+
+    groups = {k: v for k, v in groups.items() if len(v) > 1}
+    if not groups:
+        return None, None
+
+    gt_pairs = set()
+    for files in groups.values():
+        for a, b in itertools.combinations(sorted(files), 2):
+            gt_pairs.add(tuple(sorted((a, b))))
+    return groups, gt_pairs
+
+
+# ----------------------------------------------------------------- metrics
+
+def pair_metrics(det_pairs, gt_pairs, restrict=None):
+    """Pairwise precision / recall / F1 over full-path pairs.
+
+    `restrict` limits both sets to pairs whose BOTH endpoints are in the
+    given file set (used for the calibration/holdout split).
+    """
+    det, gt = set(det_pairs), set(gt_pairs)
+    if restrict is not None:
+        det = {p for p in det if p[0] in restrict and p[1] in restrict}
+        gt = {p for p in gt if p[0] in restrict and p[1] in restrict}
+
+    tp = len(det & gt)
+    fp = len(det - gt)
+    fn = len(gt - det)
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    return {"tp": tp, "fp": fp, "fn": fn,
+            "precision": precision, "recall": recall, "f1": f1}
+
+
+def duplicates_to_pairset(duplicates):
+    return {pair_key(d["file1"], d["file2"]) for d in duplicates}
+
+
+def clusters_to_pairset(clusters):
+    """Implied pair set of the predicted clusters (cluster-level evaluation:
+    if A-B and A-C were detected, the cluster correctly implies B-C too)."""
+    pairs = set()
+    for c in clusters:
+        members = [c["original"]] + [d["path"] for d in c["duplicates"]]
+        members = sorted(norm_path(m) for m in members)
+        for a, b in itertools.combinations(members, 2):
+            pairs.add((a, b))
     return pairs
 
-def organize_clusters(duplicates, mode="basename"):
+
+def per_attack_recall(clusters, gt_groups, dataset_path):
+    """For each attack folder (e.g. jpeg/10, crops/crop_50_percent): what
+    fraction of its files ended up in the same predicted cluster as their
+    source image? Returns a list of {attack, found, total, recall} rows."""
+    if not gt_groups:
+        return []
+
+    file_to_cluster = {}
+    for ci, c in enumerate(clusters):
+        for m in [c["original"]] + [d["path"] for d in c["duplicates"]]:
+            file_to_cluster[norm_path(m)] = ci
+
+    dataset_path = norm_path(dataset_path)
+    counts = defaultdict(lambda: [0, 0])  # attack label -> [found, total]
+
+    for gid, files in gt_groups.items():
+        originals = [f for f in files if is_original_file(f)]
+        if not originals:
+            # generated sets: the file named exactly like the source id
+            originals = [f for f in files if get_basename_without_ext(f) == gid]
+        if not originals:
+            originals = [sorted(files)[0]]
+        origin = originals[0]
+        origin_cluster = file_to_cluster.get(origin)
+
+        for f in files:
+            if f == origin:
+                continue
+            try:
+                label = os.path.dirname(os.path.relpath(f, dataset_path)).replace('\\', '/')
+            except ValueError:
+                label = os.path.basename(os.path.dirname(f))
+            label = label or "(top level)"
+            counts[label][1] += 1
+            if origin_cluster is not None and file_to_cluster.get(f) == origin_cluster:
+                counts[label][0] += 1
+
+    rows = [{"attack": k, "found": v[0], "total": v[1],
+             "recall": v[0] / v[1] if v[1] else 0.0}
+            for k, v in sorted(counts.items())]
+    return rows
+
+
+# -------------------------------------------------------------- clustering
+
+def organize_clusters(duplicates):
+    """Group duplicate pairs into clusters via graph connected components.
+    Filenames play no role here."""
     if not duplicates:
         return []
-    
-    if mode == "basename":
-        return _cluster_by_basename(duplicates)
-    else:
-        return _cluster_by_graph(duplicates)
 
-def _cluster_by_basename(duplicates):
-    basename_groups = defaultdict(lambda: {'files': set(), 'pairs': []})
-    
-    for dup in duplicates:
-        f1, f2 = dup['file1'], dup['file2']
-        b1 = get_basename_without_ext(f1)
-        b2 = get_basename_without_ext(f2)
-        
-        #matching basenames
-        if b1 == b2:
-            basename_groups[b1]['files'].add(f1)
-            basename_groups[b1]['files'].add(f2)
-            basename_groups[b1]['pairs'].append(dup)
-    
-    clusters = []
-    
-    for basename, data in basename_groups.items():
-        files = list(data['files'])
-        if len(files) < 2:
-            continue
-        
-        # Build graph
-        G = nx.Graph()
-        for dup in data['pairs']:
-            G.add_edge(dup['file1'], dup['file2'], weight=dup['score'])
-        
-        original = _select_original(files, G)
-        dups_list = _get_duplicates_from_graph(files, original, G)
-        
-        if dups_list:
-            clusters.append({'original': original, 'duplicates': dups_list})
-    
-    return sorted(clusters, key=lambda x: len(x['duplicates']), reverse=True)
-
-def _cluster_by_graph(duplicates):
     G = nx.Graph()
-    
     for d in duplicates:
         G.add_edge(d['file1'], d['file2'], weight=d['score'])
-    
+
     clusters = []
-    
     for component in nx.connected_components(G):
         if len(component) < 2:
             continue
-        
-        component_list = list(component)
+        members = list(component)
         subgraph = G.subgraph(component)
-        
-        original = _select_original(component_list, subgraph)
-        dups_list = _get_duplicates_from_graph(component_list, original, subgraph)
-        
+        original = _select_original(members, subgraph)
+        dups_list = _duplicates_from_graph(members, original, subgraph)
         if dups_list:
             clusters.append({'original': original, 'duplicates': dups_list})
-    
+
     return sorted(clusters, key=lambda x: len(x['duplicates']), reverse=True)
 
-def _select_original(candidates, graph):
-    for c in candidates:
-        if is_original_file(c):
-            return c
-    
-    # Highest average similarity to neighbors
-    scores = {}
-    for c in candidates:
-        neighbors = list(graph.neighbors(c))
-        if neighbors:
-            avg_weight = sum(graph[c][n]['weight'] for n in neighbors) / len(neighbors)
-            scores[c] = avg_weight
-    
-    if scores:
-        return max(scores.items(), key=lambda x: x[1])[0]
-    return min(candidates, key=lambda x: len(os.path.basename(x)))
 
-def _get_duplicates_from_graph(files, original, graph):
+def _image_pixels(path):
+    try:
+        with Image.open(path) as img:
+            w, h = img.size
+        return w * h
+    except Exception:
+        return 0
+
+
+def _select_original(candidates, graph):
+    """Pick the best file to keep: an 'original' folder hint wins, otherwise
+    the highest-resolution file (ties broken by file size)."""
+    hinted = [c for c in candidates if is_original_file(c)]
+    if hinted:
+        return hinted[0]
+
+    def quality(path):
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        return (_image_pixels(path), size)
+
+    return max(candidates, key=quality)
+
+
+def _duplicates_from_graph(files, original, graph):
     dups_list = []
-    
     for node in files:
         if node == original:
             continue
-        
-
         if graph.has_edge(original, node):
             score = graph[original][node]['weight']
         else:
             try:
                 path = nx.shortest_path(graph, original, node)
-                scores = []
-                for i in range(len(path)-1):
-                    scores.append(graph[path[i]][path[i+1]]['weight'])
-                score = sum(scores) / len(scores)
+                hops = [graph[path[i]][path[i + 1]]['weight'] for i in range(len(path) - 1)]
+                score = sum(hops) / len(hops)
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
-        
         dups_list.append({'path': node, 'score': float(score)})
-    
     return sorted(dups_list, key=lambda x: x['score'], reverse=True)
+
+
+# ------------------------------------------------------------------- misc
 
 def get_dir_size(path):
     total = 0
@@ -164,19 +243,20 @@ def get_dir_size(path):
         pass
     return total / (1024 * 1024)
 
+
 def calculate_wasted_space(duplicates):
     seen = set()
     total = 0
-
     for d in duplicates:
-        if d['file2'] not in seen:
+        key = norm_path(d['file2'])
+        if key not in seen:
             try:
                 total += os.path.getsize(d['file2'])
-                seen.add(d['file2'])
+                seen.add(key)
             except OSError:
                 pass
-    
     return total / (1024 * 1024)
+
 
 def format_file_size(bytes_size):
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -184,6 +264,3 @@ def format_file_size(bytes_size):
             return f"{bytes_size:.2f} {unit}"
         bytes_size /= 1024.0
     return f"{bytes_size:.2f} PB"
-
-def get_image_files(folder):
-    return list(walk_image_files(folder))

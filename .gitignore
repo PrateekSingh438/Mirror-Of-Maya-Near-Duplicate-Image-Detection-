@@ -1,19 +1,32 @@
+# Python
 venv/
 __pycache__/
 *.pyc
+*.ipynb
+
+# Datasets (too large for git; see README for download links)
 dataset/
 dataset_copydays/
 dataset_holidays/
-*.ipynb
-req.txt
-temp_query.jpg
-generate_crop.py
-node_modules
-frontend2
-.vscode/
-diagnose.py
+_uploadtest/
+
+# Local artifacts and scratch files
 indexes/
 session_state.json
-*.jpg
+temp_query.jpg
+_benchmark.py
+_benchmark_results.json
+req.txt
+diagnose.py
 diagnostic_check.py
-indexes/
+generate_crop.py
+
+# Personal files (not part of the project)
+main.tex
+Resume*.pdf
+mirror-of-maya-rebuild-spec.md
+
+# Editors / tooling
+.vscode/
+node_modules/
+frontend2/

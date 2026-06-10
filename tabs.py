@@ -1,759 +1,669 @@
 import streamlit as st
 import os
+import shutil
+import uuid
+
 import pandas as pd
 import plotly.graph_objects as go
-import config
-from utils import organize_clusters, format_file_size
-from ui_components import get_short_path, get_similarity_class
 import numpy as np
-import base64
+
+import config
+from utils import (organize_clusters, format_file_size, calculate_wasted_space,
+                   per_attack_recall)
+from ui_components import (get_short_path, get_similarity_class, get_thumbnail,
+                           filter_at_threshold)
 
 
-def dashboard_tab():  
+# ----------------------------------------------------------------- helpers
+
+def _get_clusters():
+    """Build clusters once per rerun; reuse across tabs."""
+    key = (st.session_state.current_slider_val, len(st.session_state.duplicates))
+    cached = st.session_state.get('_clusters_cache')
+    if cached and cached[0] == key:
+        return cached[1]
+    clusters = organize_clusters(st.session_state.duplicates)
+    st.session_state['_clusters_cache'] = (key, clusters)
+    return clusters
+
+
+def _refresh_pairs():
+    detector = st.session_state.detector
+    all_dups = detector.find_duplicates(config.SCAN_THRESHOLD_FLOOR)
+    st.session_state.all_duplicates = all_dups
+    st.session_state.duplicates = filter_at_threshold(
+        all_dups, st.session_state.current_slider_val)
+    st.session_state.deletion_queue = set()
+    st.session_state.page = 0
+    st.session_state.pop('_clusters_cache', None)
+
+
+def _trash_dir():
+    root = st.session_state.get('active_dataset_path') or config.DATASET_PATH
+    if not os.path.isdir(root):
+        root = config.TEMP_DIR
+    trash = os.path.join(root, config.TRASH_DIR_NAME)
+    os.makedirs(trash, exist_ok=True)
+    return trash
+
+
+def _soft_delete(paths):
+    """Move files to a trash folder (never permanent deletion) and purge them
+    from the index. Returns the number of files moved."""
+    trash = _trash_dir()
+    moves = []
+    for f in paths:
+        if not os.path.exists(f):
+            continue
+        dst = os.path.join(trash, f"{uuid.uuid4().hex[:8]}_{os.path.basename(f)}")
+        try:
+            shutil.move(f, dst)
+            moves.append((f, dst))
+        except OSError:
+            pass
+
+    payload = None
+    if moves and st.session_state.detector:
+        payload = st.session_state.detector.remove_files([m[0] for m in moves])
+    st.session_state.last_deletion = {'moves': moves, 'payload': payload} if moves else None
+    if st.session_state.detector:
+        _refresh_pairs()
+    return len(moves)
+
+
+def _undo_delete():
+    info = st.session_state.last_deletion
+    if not info:
+        return 0
+    restored = 0
+    for src, dst in info['moves']:
+        try:
+            shutil.move(dst, src)
+            restored += 1
+        except OSError:
+            pass
+    if info['payload'] and st.session_state.detector:
+        st.session_state.detector.restore_files(info['payload'])
+    st.session_state.last_deletion = None
+    if st.session_state.detector:
+        _refresh_pairs()
+    return restored
+
+
+def _image_card(col, path, score=None):
+    with col:
+        try:
+            st.image(get_thumbnail(path), width='stretch')
+            if score is not None:
+                badge = get_similarity_class(score)
+                st.markdown(
+                    f'<span class="similarity-badge {badge}">{score * 100:.0f}%</span>',
+                    unsafe_allow_html=True)
+            st.caption(get_short_path(path))
+        except Exception as e:
+            st.error(f"Could not load image: {e}")
+
+
+# --------------------------------------------------------------- dashboard
+
+def dashboard_tab():
     if not st.session_state.duplicates:
-        st.markdown("""
-        <div style='text-align: center; padding: 4rem 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1)); border-radius: 1rem; border: 2px solid rgba(139, 92, 246, 0.3);'>
-            <h2 style='color: #a855f7; font-family: Cinzel, serif; font-size: 2rem; margin-bottom: 1rem;'>The Mirror of Maya Awaits</h2>
-            <p style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 1.2rem;'>Click <strong>SCAN DATABASE</strong> in the sidebar to pierce through the veil of digital illusions</p>
-            <p style='color: #64748b; font-family: Inter, sans-serif; margin-top: 1rem;'>Just as Maya creates a thousand forms from one truth, this system reveals the original soul beneath countless digital avatars</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("No scan results yet. Pick a dataset in the sidebar and click "
+                "**Scan for duplicates**. You can use a local folder, upload a "
+                "ZIP of images, or paste a Google Drive link.")
         return
-    
-    st.markdown("""
-    <div style='text-align: center; margin-bottom: 2rem;'>
-        <h2 style='background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-                   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                   font-family: Cinzel, serif; font-size: 2.5rem; font-weight: 800;'>
-            Mirror Of Maya: Digital Discernment Engine
-        </h2>
-        <p style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 1.1rem;'>Cutting Through Illusions to Reveal Truth</p>
-    </div>
-    """, unsafe_allow_html=True)
-    clustering_mode = st.session_state.get('clustering_mode', 'basename')
-    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
+
+    clusters = _get_clusters()
     unique_dups = sum(len(c['duplicates']) for c in clusters)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2)); 
-                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(99, 102, 241, 0.3);'>
-            <div style='color: #818cf8; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>ILLUSIONS PIERCED</div>
-            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{unique_dups:,}</div>
-            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Digital avatars unmasked</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2)); 
-                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(168, 85, 247, 0.3);'>
-            <div style='color: #c084fc; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>TRUTH CLUSTERS</div>
-            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{len(clusters):,}</div>
-            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Original souls identified</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(244, 114, 182, 0.2)); 
-                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(236, 72, 153, 0.3);'>
-            <div style='color: #f472b6; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>DISCERNMENT ACCURACY</div>
-            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{st.session_state.f1_score:.1%}</div>
-            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>F1 Score</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        avg_sim = np.mean([d['score'] for d in st.session_state.duplicates]) if st.session_state.duplicates else 0
-        st.markdown(f"""
-        <div style='background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2)); 
-                    padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(16, 185, 129, 0.3);'>
-            <div style='color: #34d399; font-family: Cinzel, serif; font-size: 0.875rem; font-weight: 600;'>IMAGE SIMILARITY</div>
-            <div style='color: #e2e8f0; font-family: Inter, sans-serif; font-size: 2rem; font-weight: 800; margin: 0.5rem 0;'>{avg_sim:.1%}</div>
-            <div style='color: #94a3b8; font-family: Inter, sans-serif; font-size: 0.75rem;'>Average resemblance</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    if st.session_state.calibration_history:
-        df_cal = pd.DataFrame(st.session_state.calibration_history)
-        
-        #tabs for different visualizations
-        viz_tabs = st.tabs(["Calibration Curves", "Score Distribution", "Detection Insights"])
-        
-        with viz_tabs[0]:
-            _render_calibration_curves(df_cal)
-        
-        with viz_tabs[1]:
-            _render_score_distribution()
-        
-        with viz_tabs[2]:
-            _render_detection_insights(df_cal)
-
-def _render_calibration_curves(df_cal):
-    """Render main calibration curves"""
-    st.markdown("### The Path of Discernment")
-    st.markdown("*Watch how the Mirror of Maya's precision evolves across threshold levels*")
-    
-    col_chart, col_table = st.columns([2, 1])
-    
-    with col_chart:
-        fig = go.Figure()
-        
-        # F1 Score
-        fig.add_trace(go.Scatter(
-            x=df_cal['threshold'], 
-            y=df_cal['f1'],
-            mode='lines+markers',
-            name='F1 Score (Balance)',
-            line=dict(color='#6366f1', width=4),
-            marker=dict(size=10, symbol='diamond'),
-            hovertemplate='<b>Threshold:</b> %{x:.2f}<br><b>F1:</b> %{y:.3f}<extra></extra>'
-        ))
-        
-        # Optimal threshold marker
-        optimal_idx = df_cal['f1'].idxmax()
-        optimal_thresh = df_cal.loc[optimal_idx, 'threshold']
-        optimal_f1 = df_cal.loc[optimal_idx, 'f1']
-        
-        fig.add_vline(
-            x=optimal_thresh,
-            line_dash="solid",
-            line_color="#10b981",
-            line_width=2,
-            annotation_text=f"Optimal: {optimal_thresh:.2f}",
-            annotation_position="top"
-        )
-        
-        fig.add_trace(go.Scatter(
-            x=[optimal_thresh],
-            y=[optimal_f1],
-            mode='markers',
-            name='Optimal Point',
-            marker=dict(size=20, color='#10b981', symbol='star'),
-            showlegend=False
-        ))
-        
-        fig.update_layout(
-            xaxis_title="Threshold (Strictness Level)",
-            yaxis_title="Score",
-            hovermode='x unified',
-            height=450,
-            plot_bgcolor='rgba(15, 15, 35, 0.8)',
-            paper_bgcolor='rgba(0, 0, 0, 0)',
-            font=dict(color='#e2e8f0', size=12),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
-        )
-        
-        st.plotly_chart(fig, width='stretch')
-    
-    with col_table:
-        st.markdown("**Performance Metrics**")
-        st.dataframe(
-            df_cal[["threshold", "f1"]]
-            .style.highlight_max(axis=0, subset=["f1"])
-            .background_gradient(subset=['f1'], cmap='viridis')
-            .format({
-                'f1': '{:.3f}',
-                'threshold': '{:.2f}'
-            }),
-            width='stretch',
-            height=450
-        )
-
-def _render_score_distribution():
-    """Render similarity score distributions"""
-    st.markdown("### The Spectrum of Resemblance")
-    st.markdown("*How similar are the detected avatars to their originals?*")
-    
+    waste_mb = calculate_wasted_space(st.session_state.duplicates)
     scores = [d['score'] for d in st.session_state.duplicates]
 
-    # Histogram
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Duplicate files", f"{unique_dups:,}",
+                help="Files that appear to be copies of another image")
+    col2.metric("Groups", f"{len(clusters):,}",
+                help="Each group is one image plus all of its copies")
+    col3.metric("Space used by copies", format_file_size(waste_mb * 1024 * 1024))
+    col4.metric("Average similarity", f"{np.mean(scores):.1%}" if scores else "N/A")
+
+    st.markdown("---")
+
+    eval_summary = st.session_state.get('eval_summary')
+    if eval_summary:
+        _render_evaluation(eval_summary, clusters)
+    else:
+        st.info("This dataset has no ground truth (no known answer key), so "
+                "accuracy scores can't be computed. Detection still works. "
+                "Browse the results in the Manager tab.")
+
+
+def _render_evaluation(eval_summary, clusters):
+    st.markdown("### Accuracy on this dataset")
+    st.markdown(
+        "The dataset includes known duplicate pairs, so the system measured "
+        "itself against them. The threshold was chosen on half of the image "
+        "groups; the scores below come from the **other half**, which the "
+        "calibration never saw.")
+
+    holdout = eval_summary['holdout']
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("F1 score (held-out)", f"{holdout['f1']:.1%}",
+                help="Balance of precision and recall on unseen groups")
+    col2.metric("Precision (held-out)", f"{holdout['precision']:.1%}",
+                help="Of the pairs flagged as duplicates, how many really are")
+    col3.metric("Recall (held-out)", f"{holdout['recall']:.1%}",
+                help="Of the real duplicate pairs, how many were found")
+    col4.metric("Chosen threshold", f"{eval_summary['threshold']:.2f}")
+    st.caption(f"Ground truth: {eval_summary['n_gt_pairs']:,} duplicate pairs "
+               f"across {eval_summary['n_groups']} image groups.")
+
+    df_cal = pd.DataFrame(st.session_state.calibration_history)
+    viz_tabs = st.tabs(["Threshold sweep", "Score distribution",
+                        "Per-attack recall", "Detection insights"])
+    with viz_tabs[0]:
+        _render_calibration_curves(df_cal, eval_summary['threshold'])
+    with viz_tabs[1]:
+        _render_score_distribution()
+    with viz_tabs[2]:
+        _render_attack_recall(clusters)
+    with viz_tabs[3]:
+        _render_detection_insights(df_cal)
+
+
+def _render_calibration_curves(df_cal, chosen_threshold):
+    st.markdown("How precision, recall and F1 change as the threshold moves "
+                "(measured on the full ground truth).")
+
+    col_chart, col_table = st.columns([2, 1])
+    with col_chart:
+        fig = go.Figure()
+        for name, color in (("f1", "#6366f1"), ("precision", "#10b981"), ("recall", "#ec4899")):
+            fig.add_trace(go.Scatter(
+                x=df_cal['threshold'], y=df_cal[name],
+                mode='lines', name=name.capitalize(),
+                line=dict(color=color, width=3),
+            ))
+        fig.add_vline(x=chosen_threshold, line_dash="dash", line_color="#f59e0b",
+                      line_width=2, annotation_text=f"Chosen: {chosen_threshold:.2f}",
+                      annotation_position="top")
+        fig.update_layout(
+            xaxis_title="Threshold", yaxis_title="Score",
+            hovermode='x unified', height=420,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)', paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e2e8f0', size=12),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    with col_table:
+        st.markdown("**Sweep values**")
+        st.dataframe(
+            df_cal[["threshold", "f1", "precision", "recall"]].style.format({
+                'threshold': '{:.2f}', 'f1': '{:.3f}',
+                'precision': '{:.3f}', 'recall': '{:.3f}',
+            }),
+            width='stretch', height=420,
+        )
+
+
+def _render_score_distribution():
+    st.markdown("Similarity scores of all detected pairs. Exact copies found "
+                "by hashing sit near 1.0.")
+    scores = [d['score'] for d in st.session_state.duplicates]
     fig = go.Figure()
-    
     fig.add_trace(go.Histogram(
-        x=scores,
-        nbinsx=30,
-        marker=dict(
-            color='#a855f7',
-            line=dict(color='#1e293b', width=1)
-        ),
-        hovertemplate='<b>Score Range:</b> %{x}<br><b>Count:</b> %{y}<extra></extra>'
+        x=scores, nbinsx=30,
+        marker=dict(color='#a855f7', line=dict(color='#1e293b', width=1)),
     ))
-    
-    #Threshold
-    fig.add_vline(
-        x=st.session_state.current_slider_val,
-        line_dash="dash",
-        line_color="#10b981",
-        line_width=2,
-        annotation_text="Current Threshold"
-    )
-    
+    fig.add_vline(x=st.session_state.current_slider_val, line_dash="dash",
+                  line_color="#10b981", line_width=2,
+                  annotation_text="Current threshold")
     fig.update_layout(
-        title="Similarity Score Distribution",
-        xaxis_title="Similarity Score",
-        yaxis_title="Frequency",
-        height=400,
-        plot_bgcolor='rgba(15, 15, 35, 0.8)',
-        paper_bgcolor='rgba(0, 0, 0, 0)',
-        font=dict(color='#e2e8f0'),
-        showlegend=False
+        xaxis_title="Similarity score", yaxis_title="Number of pairs", height=400,
+        plot_bgcolor='rgba(15, 15, 35, 0.8)', paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#e2e8f0'), showlegend=False,
     )
-    
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
+
+
+def _render_attack_recall(clusters):
+    st.markdown("For each kind of modification in the dataset: how many of "
+                "those copies were traced back to their source image?")
+    dataset_path = st.session_state.get('active_dataset_path') or config.DATASET_PATH
+    rows = per_attack_recall(clusters, st.session_state.gt_groups, dataset_path)
+    if not rows:
+        st.info("No attack folders recognized in this dataset.")
+        return
+
+    df = pd.DataFrame(rows)
+    fig = go.Figure(go.Bar(
+        x=df['recall'], y=df['attack'], orientation='h',
+        marker=dict(color='#6366f1'),
+        text=[f"{r:.0%}" for r in df['recall']], textposition='auto',
+    ))
+    fig.update_layout(
+        xaxis_title="Recall", yaxis_title="Modification type",
+        xaxis=dict(range=[0, 1]), height=max(300, 28 * len(df)),
+        plot_bgcolor='rgba(15, 15, 35, 0.8)', paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#e2e8f0'),
+    )
+    st.plotly_chart(fig, width='stretch')
+    st.dataframe(
+        df.style.format({'recall': '{:.1%}'}),
+        width='stretch',
+    )
+
 
 def _render_detection_insights(df_cal):
-    """Render additional insights"""
-    st.markdown("### Detection Insights")
-    
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        # Detection 
         fig = go.Figure()
-        
         fig.add_trace(go.Scatter(
-            x=df_cal['threshold'],
-            y=df_cal['count'],
-            mode='lines+markers',
-            fill='tozeroy',
+            x=df_cal['threshold'], y=df_cal['count'],
+            mode='lines', fill='tozeroy',
             line=dict(color='#a855f7', width=3),
-            marker=dict(size=8),
-            fillcolor='rgba(168, 85, 247, 0.3)'
+            fillcolor='rgba(168, 85, 247, 0.3)',
         ))
-        
         fig.update_layout(
-            title="Total Detections vs Threshold",
-            xaxis_title="Threshold (Strictness)",
-            yaxis_title="Duplicate Pairs Detected",
-            height=350,
-            plot_bgcolor='rgba(15, 15, 35, 0.8)',
-            paper_bgcolor='rgba(0, 0, 0, 0)',
-            font=dict(color='#e2e8f0')
+            title="Pairs detected vs threshold",
+            xaxis_title="Threshold", yaxis_title="Detected pairs", height=350,
+            plot_bgcolor='rgba(15, 15, 35, 0.8)', paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e2e8f0'),
         )
-        
         st.plotly_chart(fig, width='stretch')
+
+    with col2:
         methods = {}
         for d in st.session_state.duplicates:
-            method = d.get('method', 'Unknown')
-            methods[method] = methods.get(method, 0) + 1
-        
+            m = d.get('method', 'Unknown')
+            methods[m] = methods.get(m, 0) + 1
         fig = go.Figure(data=[go.Pie(
-            labels=list(methods.keys()),
-            values=list(methods.values()),
-            hole=0.4,
+            labels=list(methods.keys()), values=list(methods.values()), hole=0.4,
             marker=dict(colors=['#6366f1', '#a855f7', '#ec4899']),
-            textinfo='label+percent',
-            textfont=dict(color='#e2e8f0')
+            textinfo='label+percent', textfont=dict(color='#e2e8f0'),
         )])
-        
         fig.update_layout(
-            title="Detection Method Breakdown",
-            height=350,
-            plot_bgcolor='rgba(0, 0, 0, 0)',
-            paper_bgcolor='rgba(0, 0, 0, 0)',
-            font=dict(color='#e2e8f0')
+            title="How each pair was found", height=350,
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#e2e8f0'),
         )
-        
         st.plotly_chart(fig, width='stretch')
-    
-    # Performance summary
-    st.markdown("---")
-    st.markdown("### Mirror of Maya Performance Summary")
-    
-    best_idx = df_cal['f1'].idxmax()
-    best_row = df_cal.loc[best_idx]
-    
-    summary_cols = st.columns(4)
-    
-    with summary_cols[0]:
-        st.metric("Best F1 Score", f"{best_row['f1']:.3f}", 
-                 f"at threshold {best_row['threshold']:.2f}")
-    
-    with summary_cols[1]:
-        st.metric("Peak Precision", f"{df_cal['precision'].max():.3f}",
-                 f"at threshold {df_cal.loc[df_cal['precision'].idxmax(), 'threshold']:.2f}")
-    
-    with summary_cols[2]:
-        st.metric("Peak Recall", f"{df_cal['recall'].max():.3f}",
-                 f"at threshold {df_cal.loc[df_cal['recall'].idxmax(), 'threshold']:.2f}")
-    
-    with summary_cols[3]:
-        st.metric("Total Pairs", f"{len(st.session_state.duplicates):,}",
-                 f"at current threshold")
+
+
+# ----------------------------------------------------------------- manager
+
 def manager_tab():
-    """Duplicate manager with deletion queue"""
     if not st.session_state.duplicates:
-        st.info("No duplicates found")
+        st.info("No duplicates to manage yet. Run a scan first.")
         return
-    
-    clustering_mode = st.session_state.get('clustering_mode', 'basename')
-    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
-    
-    st.info(f"{len(clusters)} groups • {sum(len(c['duplicates']) for c in clusters)} duplicate files")
-    
-    # Actions
+
+    clusters = _get_clusters()
+    st.info(f"{len(clusters)} groups • "
+            f"{sum(len(c['duplicates']) for c in clusters)} duplicate files. "
+            f"Deleted files are moved to a trash folder, not erased, so you can undo.")
+
+    if st.session_state.get('last_deletion'):
+        n = len(st.session_state.last_deletion['moves'])
+        if st.button(f"Undo last deletion ({n} files)"):
+            restored = _undo_delete()
+            st.success(f"Restored {restored} files")
+            st.rerun()
+
     col1, col2, col3 = st.columns(3)
-    
-    if col1.button("Select All", width='stretch'):
+    if col1.button("Select all duplicates", width='stretch'):
         for c in clusters:
             for d in c['duplicates']:
                 st.session_state.deletion_queue.add(d['path'])
         st.rerun()
-    
-    if col2.button("Clear", width='stretch'):
+    if col2.button("Clear selection", width='stretch'):
         st.session_state.deletion_queue.clear()
         st.rerun()
-    
-    if st.session_state.deletion_queue and col3.button(
-        f"Delete ({len(st.session_state.deletion_queue)})",
-        type="primary",
-        width='stretch'
-    ):
-        deleted = 0
-        progress_bar = st.progress(0)
-        total = len(st.session_state.deletion_queue)
-        
-        for i, f in enumerate(list(st.session_state.deletion_queue)):
-            try:
-                os.remove(f)
-                st.session_state.deletion_queue.discard(f)
-                deleted += 1
-            except OSError:
-                pass
-            progress_bar.progress((i + 1) / total)
-        
-        # Update duplicates
-        st.session_state.duplicates = [
-            d for d in st.session_state.duplicates 
-            if os.path.exists(d['file1']) and os.path.exists(d['file2'])
-        ]
-        st.session_state.all_duplicates = [
-            d for d in st.session_state.all_duplicates 
-            if os.path.exists(d['file1']) and os.path.exists(d['file2'])
-        ]
-        
-        st.success(f"✔ Deleted {deleted} files")
-        st.rerun()
-    
+
+    queue = st.session_state.deletion_queue
+    if queue:
+        with st.expander(f"Review selection ({len(queue)} files)"):
+            for f in sorted(queue):
+                st.caption(get_short_path(f))
+        if col3.button(f"Move {len(queue)} files to trash", type="primary",
+                       width='stretch'):
+            moved = _soft_delete(list(queue))
+            st.success(f"Moved {moved} files to trash")
+            st.rerun()
+
     st.markdown("---")
-    
-    # Pagination
-    per_page = 5
+
+    per_page = config.CLUSTERS_PER_PAGE
     total_pages = max(1, (len(clusters) - 1) // per_page + 1)
+    st.session_state.page = min(st.session_state.page, total_pages - 1)
     start = st.session_state.page * per_page
     end = min(start + per_page, len(clusters))
-    
-    # Display clusters
+
     for i, cluster in enumerate(clusters[start:end]):
         with st.container():
-            st.markdown(f"**Group {start + i + 1}**")
+            st.markdown(f"**Group {start + i + 1}**: "
+                        f"{len(cluster['duplicates'])} copies")
             col_orig, col_dups = st.columns([1, 3])
-            
+
             with col_orig:
-                st.markdown("*Original*")
-                try:
-                    st.image(cluster['original'], width='stretch')
-                    st.caption(get_short_path(cluster['original']))
-                except (OSError, ValueError, Exception) as e:
-                    st.error(f"Load failed: {e}")
-            
+                st.markdown("*Keep (best version)*")
+                _image_card(col_orig, cluster['original'])
+
             with col_dups:
-                st.markdown("*Duplicates*")
-                dup_cols = st.columns(min(len(cluster['duplicates']), 3))
-                
+                st.markdown("*Copies*")
+                n_cols = min(len(cluster['duplicates']), 3)
+                dup_cols = st.columns(n_cols)
                 for idx, dup in enumerate(cluster['duplicates']):
-                    c = dup_cols[idx % 3]
-                    try:
-                        score_pct = dup['score'] * 100
-                        badge_class = get_similarity_class(dup['score'])
-                        
-                        with open(dup['path'], 'rb') as img_file:
-                            img_data = base64.b64encode(img_file.read()).decode()
-                        
-                        if badge_class == 'similarity-high':
-                            color = '#10b981'
-                            bg_color = 'rgba(16, 185, 129, 0.9)'
-                        elif badge_class == 'similarity-medium':
-                            color = '#a855f7'
-                            bg_color = 'rgba(168, 85, 247, 0.9)'
-                        else:
-                            color = '#ef4444'
-                            bg_color = 'rgba(239, 68, 68, 0.9)'
-                        
-                        c.markdown(f'''
-                        <div style="position: relative; width: 100%;">
-                            <img src="data:image/png;base64,{img_data}" style="width: 100%; display: block;">
-                            <div style="position: absolute; top: 8px; right: 8px; 
-                                        background: {bg_color}; color: white; 
-                                        padding: 4px 8px; border-radius: 4px; 
-                                        font-size: 11px; font-weight: bold;
-                                        font-family: 'Cinzel', serif;
-                                        box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
-                                {score_pct:.0f}%
-                            </div>
-                        </div>
-                        ''', unsafe_allow_html=True)
-                        
-                        c.caption(get_short_path(dup['path']))
-                        
-                        is_selected = c.checkbox(
-                            "Delete",
-                            key=f"del_{start+i}_{idx}",
-                            value=dup['path'] in st.session_state.deletion_queue
-                        )
-                        
-                        if is_selected:
-                            st.session_state.deletion_queue.add(dup['path'])
-                        else:
-                            st.session_state.deletion_queue.discard(dup['path'])
-                    except Exception as e:
-                        c.error(f"Error: {e}")
-            
+                    c = dup_cols[idx % n_cols]
+                    _image_card(c, dup['path'], dup['score'])
+                    import hashlib
+                    key = "del_" + hashlib.md5(dup['path'].encode()).hexdigest()[:12]
+                    selected = c.checkbox(
+                        "Select for deletion", key=key,
+                        value=dup['path'] in st.session_state.deletion_queue)
+                    if selected:
+                        st.session_state.deletion_queue.add(dup['path'])
+                    else:
+                        st.session_state.deletion_queue.discard(dup['path'])
             st.markdown("---")
-    
+
     col_prev, col_center, col_next = st.columns([1, 2, 1])
-    
     with col_prev:
-        if st.session_state.page > 0 and st.button("← Prev", width='stretch'):
+        if st.session_state.page > 0 and st.button("← Previous", width='stretch'):
             st.session_state.page -= 1
             st.rerun()
-    
     with col_center:
-        st.markdown(f"<div style='text-align: center; padding-top: 0.5rem; font-family: Inter, sans-serif; color: #94a3b8;'>Page {st.session_state.page + 1} / {total_pages}</div>", unsafe_allow_html=True)
-    
+        st.markdown(
+            f"<div style='text-align: center; padding-top: 0.5rem; color: #94a3b8;'>"
+            f"Page {st.session_state.page + 1} of {total_pages}</div>",
+            unsafe_allow_html=True)
     with col_next:
         if end < len(clusters) and st.button("Next →", width='stretch'):
             st.session_state.page += 1
             st.rerun()
 
+
+# ------------------------------------------------------------------ search
+
 def search_tab():
-    st.markdown("### Image Search")
-    
+    st.markdown("### Search by image")
+    st.markdown("Upload any image to find its copies and near-copies in the "
+                "scanned dataset.")
+
+    if not st.session_state.detector:
+        st.info("Run a scan first, then search the indexed images here.")
+        return
+
     col_upload, col_settings = st.columns([2, 1])
-    
     with col_upload:
-        uploaded = st.file_uploader("Upload image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'])
-    
+        uploaded = st.file_uploader("Query image",
+                                    type=['png', 'jpg', 'jpeg', 'bmp', 'webp'])
     with col_settings:
-        query_threshold = st.slider("Threshold", 0.30, 0.99, 0.75, 0.01, key="query_thresh")
-        max_results = st.number_input("Max Results", 1, 100, 50)
-    
-    if uploaded and st.session_state.detector:
-        query_path = config.TEMP_QUERY_FILE
-        with open(query_path, "wb") as f:
-            f.write(uploaded.getbuffer())
+        query_threshold = st.slider("Minimum similarity", 0.40, 0.99, 0.75, 0.01,
+                                    key="query_thresh")
+        max_results = st.number_input("Max results", 1, 100, 50)
 
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.image(query_path, caption="Query", width='stretch')
+    if not uploaded:
+        return
 
-        with st.spinner("Searching..."):
-            results = st.session_state.detector.find_matches_for_file(
-                query_path,
-                threshold=query_threshold,
-                top_k=max_results
-            )
-        
-        if results:
-            st.success(f"Found {len(results)} matches")
-            
-            for i in range(0, len(results), 3):
-                cols = st.columns(3)
-                for j, col in enumerate(cols):
-                    if i + j < len(results):
-                        res = results[i + j]
-                        with col:
-                            try:
-                                st.image(res['path'], width='stretch')
-                                score_pct = res['score'] * 100
-                                badge_class = get_similarity_class(res['score'])
-                                st.markdown(
-                                    f'<span class="similarity-badge {badge_class}">{score_pct:.0f}%</span>',
-                                    unsafe_allow_html=True
-                                )
-                                st.caption(get_short_path(res['path']))
-                            except Exception as e:
-                                st.error(f"Load error: {e}")
-        else:
-            st.warning(f"No matches at {query_threshold:.0%}")
-    elif not st.session_state.detector:
-        st.info("Run scan to enable search")
+    ext = os.path.splitext(uploaded.name)[1] or ".jpg"
+    query_path = os.path.join(config.TEMP_DIR,
+                              f"query_{st.session_state.session_uid}{ext}")
+    with open(query_path, "wb") as f:
+        f.write(uploaded.getbuffer())
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(query_path, caption="Query", width='stretch')
+
+    with st.spinner("Searching..."):
+        results = st.session_state.detector.find_matches_for_file(
+            query_path, threshold=query_threshold, top_k=int(max_results))
+
+    if results:
+        st.success(f"Found {len(results)} matches")
+        for i in range(0, len(results), 3):
+            cols = st.columns(3)
+            for j, col in enumerate(cols):
+                if i + j < len(results):
+                    res = results[i + j]
+                    _image_card(col, res['path'], res['score'])
+    else:
+        st.warning(f"No matches at {query_threshold:.0%} similarity. "
+                   f"Try lowering the slider.")
+
+
+# --------------------------------------------------------------- analytics
 
 def analytics_tab():
     st.markdown("### Analytics")
-    
     if not st.session_state.duplicates:
-        st.info("Run a scan to view analytics")
+        st.info("Run a scan to see analytics.")
         return
-    
-    clustering_mode = st.session_state.get('clustering_mode', 'basename')
-    clusters = organize_clusters(st.session_state.duplicates, mode=clustering_mode)
+
+    clusters = _get_clusters()
     scores = [d['score'] for d in st.session_state.duplicates]
     unique_duplicates = sum(len(c['duplicates']) for c in clusters)
-    
+
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        st.metric("Duplicate Files", unique_duplicates)
-        st.metric("Duplicate Pairs", len(st.session_state.duplicates))
-    
+        st.metric("Duplicate files", unique_duplicates)
+        st.metric("Duplicate pairs", len(st.session_state.duplicates))
     with col2:
-        st.metric("Mean Score", f"{sum(scores)/len(scores):.3f}" if scores else "N/A")
-        st.metric("Median Score", f"{sorted(scores)[len(scores)//2]:.3f}" if scores else "N/A")
-    
+        st.metric("Mean similarity", f"{np.mean(scores):.3f}" if scores else "N/A")
+        st.metric("Median similarity", f"{np.median(scores):.3f}" if scores else "N/A")
     with col3:
         st.metric("Groups", len(clusters))
-        avg_size = sum(len(c['duplicates']) for c in clusters) / len(clusters) if clusters else 0
-        st.metric("Avg Group Size", f"{avg_size:.1f}")
-    
+        avg_size = unique_duplicates / len(clusters) if clusters else 0
+        st.metric("Average group size", f"{avg_size:.1f}")
+
     st.markdown("---")
-    st.markdown("### Detailed List")
-    
+    st.markdown("### All detected pairs")
     df_details = pd.DataFrame([
         {
-            'Original': get_short_path(c['original']),
-            'Duplicate': get_short_path(d['path']),
-            'Score': f"{d['score']:.3f}",
-            'Marked': '✓' if d['path'] in st.session_state.deletion_queue else ''
+            'Kept file': get_short_path(c['original']),
+            'Copy': get_short_path(d['path']),
+            'Similarity': f"{d['score']:.3f}",
+            'Selected': '✓' if d['path'] in st.session_state.deletion_queue else '',
         }
         for c in clusters
         for d in c['duplicates']
     ])
-    
     st.dataframe(df_details, width='stretch', height=400)
 
+
+# ---------------------------------------------------------- hash duplicates
+
 def hash_duplicates_tab():
-    st.markdown("### Hash-Based Duplicate Detection")
-    
+    st.markdown("### Exact copies (hash matches)")
+    st.markdown("These pairs were caught by perceptual hashing. They are "
+                "byte-near-identical copies (same image, possibly re-saved).")
+
     if not st.session_state.detector:
-        st.info("Run a scan first to enable hash detection")
+        st.info("Run a scan first.")
         return
-    
-    if hasattr(st.session_state.detector, 'fast_duplicates') and st.session_state.detector.fast_duplicates:
-        hash_dups = st.session_state.detector.fast_duplicates
-        
-        st.success(f"Found {len(hash_dups)} exact/near-exact duplicates via perceptual hashing")
-        
-        st.markdown("---")
-        
-        for i in range(0, len(hash_dups), 3):
-            cols = st.columns(3)
-            for j, col in enumerate(cols):
-                if i + j < len(hash_dups):
-                    dup = hash_dups[i + j]
-                    with col:
-                        try:
-                            st.markdown(f"**Pair {i + j + 1}**")
-                            
-                            st.image(dup['file1'], caption="File 1", width='stretch')
-                            st.caption(get_short_path(dup['file1']))
-                            
-                            st.image(dup['file2'], caption="File 2", width='stretch')
-                            st.caption(get_short_path(dup['file2']))
-                            
-                            score_pct = dup['score'] * 100
-                            st.markdown(
-                                f'<span class="similarity-badge similarity-high">{score_pct:.0f}%</span>',
-                                unsafe_allow_html=True
-                            )
-                            st.caption(f"Method: {dup['method']}")
-                            
-                            if st.checkbox(f"Delete File 2", key=f"hash_del_{i+j}"):
-                                if st.button(f"🗑️ Confirm Delete", key=f"hash_confirm_{i+j}", type="primary"):
-                                    try:
-                                        os.remove(dup['file2'])
-                                        st.success("✔ Deleted")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Error: {e}")
-                        except Exception as e:
-                            st.error(f"Error loading: {e}")
-            
-            if i + 3 < len(hash_dups):
-                st.markdown("---")
-    else:
-        st.info("No hash-based duplicates found")
+
+    hash_dups = [d for d in st.session_state.detector.fast_duplicates
+                 if os.path.exists(d['file1']) and os.path.exists(d['file2'])]
+    if not hash_dups:
+        st.info("No exact copies found by hashing.")
+        return
+
+    st.success(f"{len(hash_dups)} exact or near-exact copies found")
+    st.markdown("---")
+
+    for i in range(0, len(hash_dups), 3):
+        cols = st.columns(3)
+        for j, col in enumerate(cols):
+            if i + j < len(hash_dups):
+                dup = hash_dups[i + j]
+                with col:
+                    st.markdown(f"**Pair {i + j + 1}**: "
+                                f"hash distance {dup.get('hash_distance', '?')}")
+                    _image_card(col, dup['file1'])
+                    _image_card(col, dup['file2'])
+                    if st.button("Move copy to trash", key=f"hash_del_{i + j}"):
+                        moved = _soft_delete([dup['file2']])
+                        if moved:
+                            st.success("Moved to trash (undo in Manager tab)")
+                        st.rerun()
+        if i + 3 < len(hash_dups):
+            st.markdown("---")
+
+
+# ------------------------------------------------------------------ versus
 
 def versus_tab():
-    st.markdown("### Image Comparison")
-    
-    if not st.session_state.detector:
-        st.info("Run a scan first to enable comparison")
-        return
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Image 1**")
-        img1 = st.file_uploader("Upload first image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img1")
-    
-    with col2:
-        st.markdown("**Image 2**")
-        img2 = st.file_uploader("Upload second image", type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img2")
-    
-    if img1 and img2:
-        # Save temp files
-        temp1 = os.path.join(config.TEMP_DIR, "temp_img1.jpg")
-        temp2 = os.path.join(config.TEMP_DIR, "temp_img2.jpg")
-        
-        with open(temp1, "wb") as f:
-            f.write(img1.getbuffer())
-        with open(temp2, "wb") as f:
-            f.write(img2.getbuffer())
-        
-        # Display images
-        col_disp1, col_disp2 = st.columns(2)
-        with col_disp1:
-            st.image(temp1, width='stretch')
-        with col_disp2:
-            st.image(temp2, width='stretch')
-        
-        st.markdown("---")
-        
-        # Compare
-        with st.spinner("Comparing..."):
-            result = st.session_state.detector.compare_two_images(temp1, temp2)
-        
-        if result:
-            similarity_pct = result['similarity'] * 100
-            
-            # Large similarity display
-            st.markdown(f"""
-            <div style='text-align: center; padding: 2rem;'>
-                <h1 style='font-family: Cinzel, serif; font-size: 4rem; margin: 0;
-                           background: linear-gradient(135deg, #6366f1, #a855f7);
-                           -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>{similarity_pct:.1f}%</h1>
-                <p style='font-family: Inter, sans-serif; font-size: 1.5rem; color: #94a3b8;'>Similarity</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Metrics
-            col_m1, col_m2, col_m3 = st.columns(3)
-            
-            with col_m1:
-                st.metric("DINOv2 Similarity", f"{result['similarity']:.4f}")
-            
-            with col_m2:
-                if result['hash_distance'] is not None:
-                    st.metric("Hash Distance", result['hash_distance'])
-                else:
-                    st.metric("Hash Distance", "N/A")
-            
-            with col_m3:
-                match_status = "MATCH" if result['match'] else "NO MATCH"
-                st.metric("Status", match_status)
-            
-            # Interpretation
-            st.markdown("---")
-            st.markdown("### Interpretation")
-            
-            if similarity_pct >= 90:
-                st.success("**Very Similar** - Likely duplicates or minor variations")
-            elif similarity_pct >= 75:
-                st.info("**Similar** - Related images with noticeable differences")
-            elif similarity_pct >= 60:
-                st.warning("**Somewhat Similar** - May share some visual elements")
-            else:
-                st.error("**Different** - Images are quite different")
-            
-            if result['hash_distance'] is not None:
-                if result['hash_distance'] <= 5:
-                    st.success(f"Hash distance: {result['hash_distance']} - Perceptually very similar")
-                elif result['hash_distance'] <= 10:
-                    st.info(f"Hash distance: {result['hash_distance']} - Perceptually similar")
-                else:
-                    st.warning(f"Hash distance: {result['hash_distance']} - Perceptually different")
-        else:
-            st.error("Failed to compare images")
+    st.markdown("### Compare two images")
+    st.markdown("Upload any two images to see how similar the system thinks "
+                "they are.")
 
+    if not st.session_state.detector:
+        st.info("Run a scan first to load the model, then compare images here.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        img1 = st.file_uploader("First image",
+                                type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img1")
+    with col2:
+        img2 = st.file_uploader("Second image",
+                                type=['png', 'jpg', 'jpeg', 'bmp', 'webp'], key="img2")
+
+    if not (img1 and img2):
+        return
+
+    uid = st.session_state.session_uid
+    temp1 = os.path.join(config.TEMP_DIR, f"vs1_{uid}{os.path.splitext(img1.name)[1] or '.jpg'}")
+    temp2 = os.path.join(config.TEMP_DIR, f"vs2_{uid}{os.path.splitext(img2.name)[1] or '.jpg'}")
+    with open(temp1, "wb") as f:
+        f.write(img1.getbuffer())
+    with open(temp2, "wb") as f:
+        f.write(img2.getbuffer())
+
+    col_disp1, col_disp2 = st.columns(2)
+    with col_disp1:
+        st.image(temp1, width='stretch')
+    with col_disp2:
+        st.image(temp2, width='stretch')
+    st.markdown("---")
+
+    with st.spinner("Comparing..."):
+        result = st.session_state.detector.compare_two_images(temp1, temp2)
+
+    if not result:
+        st.error("Could not read one of the images.")
+        return
+
+    similarity_pct = result['similarity'] * 100
+    st.markdown(f"""
+    <div style='text-align: center; padding: 1.5rem;'>
+        <h1 style='font-size: 3.5rem; margin: 0;
+                   background: linear-gradient(135deg, #6366f1, #a855f7);
+                   -webkit-background-clip: text;
+                   -webkit-text-fill-color: transparent;'>{similarity_pct:.1f}%</h1>
+        <p style='font-size: 1.2rem; color: #94a3b8;'>similarity</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Embedding similarity", f"{result['similarity']:.4f}",
+                  help="Cosine similarity of the DINOv2 embeddings (1.0 = identical)")
+    if result['hash_distance'] is not None:
+        col_m2.metric("Hash distance", result['hash_distance'],
+                      help="Number of differing bits between the two perceptual "
+                           "hashes (0 = identical, under 3 = exact copy)")
+    else:
+        col_m2.metric("Hash distance", "N/A")
+    col_m3.metric("Verdict", "Duplicate" if result['match'] else "Not a duplicate",
+                  help=f"Compared against the current threshold "
+                       f"({st.session_state.detector.optimal_threshold:.2f})")
+
+    st.markdown("---")
+    if similarity_pct >= 90:
+        st.success("**Very similar**: almost certainly the same image, possibly "
+                   "compressed, cropped or recolored.")
+    elif similarity_pct >= 75:
+        st.info("**Similar**: likely related images with visible differences.")
+    elif similarity_pct >= 60:
+        st.warning("**Somewhat similar**: they may share content or composition.")
+    else:
+        st.error("**Different**: these look like different images.")
+
+
+# ------------------------------------------------------------- architecture
 
 def architecture_tab():
     st.markdown("""
-    ### System Architecture
+    ### How it works
 
-    Mirror of Maya uses a **two-phase detection pipeline** combining classical perceptual hashing
-    with deep learning embeddings to achieve both speed and accuracy.
-
-    ---
-
-    #### Phase 1: Perceptual Hashing (dHash)
-    - **Algorithm**: Difference Hash (dHash) with 16x16 hash size
-    - **Purpose**: Fast-pass filter for exact and near-exact duplicates
-    - **How it works**: Converts each image to a grayscale gradient fingerprint, then compares
-      fingerprints using Hamming distance (threshold ≤ 2 bits)
-    - **Complexity**: O(n) for indexing, O(1) per lookup
-    - **Strength**: Catches identical copies, minor crops, and JPEG re-compressions instantly
-
-    #### Phase 2: Deep Semantic Embeddings (DINOv2)
-    - **Model**: Meta's DINOv2 (self-supervised Vision Transformer)
-    - **Variants**: Small (21M), Base (86M), Large (300M) parameters
-    - **How it works**: Each image is projected into a high-dimensional embedding space where
-      visually similar images cluster together. Similarity is measured via cosine distance.
-    - **Index**: FAISS `IndexFlatIP` for exact inner-product search
-    - **Strength**: Detects semantically similar images even under heavy transformations
-      (cropping, color shifts, overlays)
+    The system runs two detection stages and an optional evaluation stage.
 
     ---
 
-    #### Threshold Calibration
-    The system auto-calibrates the optimal similarity threshold using **ground truth pairs**
-    from the dataset:
-    1. Images in the `original/` folder are treated as ground truth sources
-    2. Files with matching basenames in other folders (e.g., `jpeg/`, `crops/`) are treated as known duplicates
-    3. F1 score is maximized across thresholds from 0.30 to 0.95
-    4. The threshold slider allows real-time exploration of the precision-recall tradeoff
+    #### Stage 1: Exact copies (perceptual hashing)
+    Every image is reduced to a 256-bit **dHash** fingerprint (a 16x16 map of
+    brightness gradients). Two images whose fingerprints differ by at most
+    2 bits are exact or near-exact copies, for example the same photo saved
+    at a different JPEG quality. All fingerprints are compared against all
+    others directly (no shortcuts), so nothing is missed at this stage.
 
-    #### Clustering
-    Detected duplicate pairs are organized into clusters using **NetworkX graph components**.
-    Each cluster has one "original" (selected by path heuristic or highest connectivity)
-    and one or more duplicates.
+    #### Stage 2: Visual similarity (DINOv2 + FAISS)
+    Every image, including the exact copies from Stage 1, is passed through
+    **DINOv2**, a vision transformer from Meta AI, producing one normalized
+    embedding vector per image (the CLS token). Images are processed in
+    batches for speed. A **FAISS range search** then returns *every* pair of
+    images whose cosine similarity exceeds the threshold floor. There is no
+    top-k cutoff, so large duplicate groups are found completely.
+
+    #### Grouping
+    Detected pairs form a graph; connected components become duplicate
+    groups. The file kept as "best version" is chosen by image quality
+    (resolution, then file size). Filenames are never used for detection.
 
     ---
 
-    #### Tech Stack
-    | Component | Technology |
-    |-----------|-----------|
-    | Frontend | Streamlit |
-    | Vision Model | DINOv2 (HuggingFace Transformers) |
-    | Hashing | imagehash (dHash) |
-    | Vector Search | FAISS (Facebook AI Similarity Search) |
-    | Graph Clustering | NetworkX |
-    | Visualization | Plotly |
-    | Deep Learning | PyTorch |
+    #### Evaluation (only on benchmark datasets)
+    If the dataset has a known answer key, meaning copies share filenames
+    across folders (like the INRIA copydays benchmark) or carry `_aug_*`
+    suffixes, the system builds ground-truth pairs from it and measures itself:
 
-    #### Key Design Decisions
-    - **Two-phase pipeline**: Hash phase eliminates exact duplicates cheaply before expensive
-      embedding computation, reducing DINOv2 calls by ~30-50%
-    - **L2-normalized embeddings + Inner Product**: Equivalent to cosine similarity but faster
-      with FAISS `IndexFlatIP`
-    - **Basename-aware clustering**: Leverages dataset structure for ground truth without
-      manual annotation
-    - **Real-time threshold tuning**: Users can explore precision vs recall tradeoff without
-      re-scanning
+    1. Image groups are split 50/50 into a calibration half and a held-out half.
+    2. The similarity threshold is swept from 0.40 to 0.99 in steps of 0.01;
+       the F1-optimal value is chosen **on the calibration half only**.
+    3. Precision, recall and F1 are then reported **on the held-out half**,
+       which the calibration never saw.
+
+    Pairs are compared by full file path. Filenames are used only to build
+    the answer key, never by the detector itself, which is why scanning any
+    ordinary folder of photos works the same way (just without the scores).
+
+    ---
+
+    #### Technology
+    | Component | Library |
+    |-----------|---------|
+    | Embeddings | DINOv2 via HuggingFace Transformers (PyTorch) |
+    | Vector search | FAISS (range search on a flat inner-product index) |
+    | Exact-copy hashing | imagehash (dHash) |
+    | Grouping | NetworkX connected components |
+    | Interface | Streamlit + Plotly |
     """)
 
     if st.session_state.detector:
         st.markdown("---")
-        st.markdown("#### Current Session Stats")
+        st.markdown("#### Current session")
+        det = st.session_state.detector
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Images Indexed", st.session_state.detector.index.ntotal)
-            st.metric("Hash Duplicates (Phase 1)", len(st.session_state.detector.fast_duplicates))
+            st.metric("Images indexed", det.index.ntotal)
+            st.metric("Exact copies (Stage 1)", len(det.fast_duplicates))
         with col2:
-            st.metric("Embedding Dimension", st.session_state.detector.dimension)
-            st.metric("Model", st.session_state.selected_model.split("/")[-1])
+            st.metric("Embedding dimension", det.dimension)
+            st.metric("Model", det.model_id.split("/")[-1])
         with col3:
-            st.metric("Device", st.session_state.detector.device.upper())
-            st.metric("Optimal Threshold", f"{st.session_state.optimal_thresh:.2f}")
+            st.metric("Device", det.device.upper())
+            st.metric("Threshold", f"{det.optimal_threshold:.2f}")
+        if det.failed_files:
+            st.caption(f"{len(det.failed_files)} files could not be read and "
+                       f"were skipped.")
