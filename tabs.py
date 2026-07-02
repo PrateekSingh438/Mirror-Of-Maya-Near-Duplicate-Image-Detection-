@@ -10,9 +10,8 @@ import numpy as np
 
 import config
 from utils import (organize_clusters, format_file_size, calculate_wasted_space,
-                   per_attack_recall)
-from ui_components import (get_short_path, get_similarity_class, get_thumbnail,
-                           filter_at_threshold)
+                   per_attack_recall, filter_at_threshold)
+from ui_components import get_short_path, get_similarity_class, get_thumbnail
 
 
 # ----------------------------------------------------------------- helpers
@@ -35,8 +34,25 @@ def _refresh_pairs():
     st.session_state.duplicates = filter_at_threshold(
         all_dups, st.session_state.current_slider_val)
     st.session_state.deletion_queue = set()
+    _bump_selection_gen()
     st.session_state.page = 0
     st.session_state.pop('_clusters_cache', None)
+
+
+def _bump_selection_gen():
+    """Invalidate every manager checkbox by changing their widget keys.
+
+    Streamlit ignores a checkbox's `value=` once the widget has state under
+    its key, so 'Select all' / 'Clear selection' cannot flip the visible
+    boxes in place - the stale widget state would immediately write the old
+    selection back into the queue. New keys force fresh widgets that read
+    their initial value from the queue."""
+    st.session_state.selection_gen = st.session_state.get('selection_gen', 0) + 1
+
+
+def _selection_key(path):
+    gen = st.session_state.get('selection_gen', 0)
+    return f"del_{gen}_" + hashlib.md5(path.encode()).hexdigest()[:12]
 
 
 def _trash_dir():
@@ -116,7 +132,7 @@ def dashboard_tab():
 
     clusters = _get_clusters()
     unique_dups = sum(len(c['duplicates']) for c in clusters)
-    waste_mb = calculate_wasted_space(st.session_state.duplicates)
+    waste_mb = calculate_wasted_space(clusters)
     scores = [d['score'] for d in st.session_state.duplicates]
 
     col1, col2, col3, col4 = st.columns(4)
@@ -324,9 +340,11 @@ def manager_tab():
             for c in clusters:
                 for d in c['duplicates']:
                     st.session_state.deletion_queue.add(d['path'])
+            _bump_selection_gen()
             st.rerun()
         if col2.button("Clear selection", width='stretch'):
             st.session_state.deletion_queue.clear()
+            _bump_selection_gen()
             st.rerun()
 
         queue = st.session_state.deletion_queue
@@ -367,9 +385,8 @@ def manager_tab():
                     _image_card(c, dup['path'], dup['score'])
                     if demo_mode:
                         continue
-                    key = "del_" + hashlib.md5(dup['path'].encode()).hexdigest()[:12]
                     selected = c.checkbox(
-                        "Select for deletion", key=key,
+                        "Select for deletion", key=_selection_key(dup['path']),
                         value=dup['path'] in st.session_state.deletion_queue)
                     if selected:
                         st.session_state.deletion_queue.add(dup['path'])
@@ -523,10 +540,19 @@ def hash_duplicates_tab():
     st.success(f"{len(hash_dups)} exact or near-exact copies found")
     st.markdown("---")
 
-    for i in range(0, len(hash_dups), 3):
+    # Paginated: this tab runs on every rerun, and rendering hundreds of
+    # pairs at once (735 in the demo corpus) froze the whole app.
+    per_page = 12
+    total_pages = max(1, (len(hash_dups) - 1) // per_page + 1)
+    page = min(st.session_state.get('hash_page', 0), total_pages - 1)
+    st.session_state.hash_page = page
+    start = page * per_page
+    end = min(start + per_page, len(hash_dups))
+
+    for i in range(start, end, 3):
         cols = st.columns(3)
         for j, col in enumerate(cols):
-            if i + j < len(hash_dups):
+            if i + j < end:
                 dup = hash_dups[i + j]
                 with col:
                     st.markdown(f"**Pair {i + j + 1}**: "
@@ -539,8 +565,23 @@ def hash_duplicates_tab():
                             if moved:
                                 st.success("Moved to trash (undo in Manager tab)")
                             st.rerun()
-        if i + 3 < len(hash_dups):
+        if i + 3 < end:
             st.markdown("---")
+
+    col_prev, col_center, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if page > 0 and st.button("← Previous", key="hash_prev", width='stretch'):
+            st.session_state.hash_page -= 1
+            st.rerun()
+    with col_center:
+        st.markdown(
+            f"<div style='text-align: center; padding-top: 0.5rem; color: #94a3b8;'>"
+            f"Page {page + 1} of {total_pages}</div>",
+            unsafe_allow_html=True)
+    with col_next:
+        if end < len(hash_dups) and st.button("Next →", key="hash_next", width='stretch'):
+            st.session_state.hash_page += 1
+            st.rerun()
 
 
 # ------------------------------------------------------------------ versus
@@ -581,7 +622,8 @@ def versus_tab():
     st.markdown("---")
 
     with st.spinner("Comparing..."):
-        result = st.session_state.detector.compare_two_images(temp1, temp2)
+        result = st.session_state.detector.compare_two_images(
+            temp1, temp2, threshold=st.session_state.current_slider_val)
 
     if not result:
         st.error("Could not read one of the images.")
@@ -609,7 +651,7 @@ def versus_tab():
         col_m2.metric("Hash distance", "N/A")
     col_m3.metric("Verdict", "Duplicate" if result['match'] else "Not a duplicate",
                   help=f"Compared against the current threshold "
-                       f"({st.session_state.detector.optimal_threshold:.2f})")
+                       f"({st.session_state.current_slider_val:.2f})")
 
     st.markdown("---")
     if similarity_pct >= 90:

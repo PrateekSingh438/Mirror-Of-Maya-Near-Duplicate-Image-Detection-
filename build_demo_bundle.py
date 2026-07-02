@@ -15,6 +15,7 @@ Writes:
 The app (ui_components.maybe_load_demo) loads this at startup so visitors see
 a working duplicate index immediately instead of an empty screen.
 """
+import io
 import json
 import os
 import shutil
@@ -74,7 +75,6 @@ def main():
             with Image.open(src) as im:
                 thumb = im.convert("RGB")
                 thumb.thumbnail((THUMB_SIZE, THUMB_SIZE))
-            import io
             buf = io.BytesIO()
             thumb.save(buf, format="JPEG", quality=THUMB_QUALITY)
             zf.writestr(rel, buf.getvalue())

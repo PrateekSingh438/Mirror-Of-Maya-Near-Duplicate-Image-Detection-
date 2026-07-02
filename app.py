@@ -11,7 +11,7 @@ from session_manager import (initialize_session_state, load_session_state,
 
 # Page config
 st.set_page_config(
-    page_title="Mirror of Maya",
+    page_title=config.PAGE_TITLE,
     layout=config.LAYOUT,
     initial_sidebar_state="expanded"
 )
@@ -40,14 +40,17 @@ if st.session_state.detector and st.session_state.all_duplicates:
 if st.session_state.detector:
     clusters = _get_clusters()
     unique_duplicates = sum(len(c['duplicates']) for c in clusters)
-    waste = calculate_wasted_space(st.session_state.duplicates)
+    waste = calculate_wasted_space(clusters)
     metrics = recalculate_metrics(st.session_state.current_slider_val)
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Duplicate files", f"{unique_duplicates:,}")
     col2.metric("Space used by copies", format_file_size(waste * 1024 * 1024))
     col3.metric("F1 score", f"{metrics['f1']:.4f}" if metrics else "N/A",
-                help=None if metrics else "Needs a dataset with ground truth")
+                help="Live score at the current threshold, measured on the "
+                     "FULL ground truth. The Dashboard reports the stricter "
+                     "held-out score." if metrics
+                else "Needs a dataset with ground truth")
     col4.metric("Threshold", f"{st.session_state.current_slider_val:.2f}")
 
 st.markdown("---")

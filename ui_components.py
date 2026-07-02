@@ -8,8 +8,9 @@ from PIL import Image
 import config
 import engine
 from engine import DuplicateDetector
-from utils import get_dir_size, generate_ground_truth, norm_path, walk_image_files
-from session_manager import save_session_state, recalculate_metrics
+from utils import (get_dir_size, generate_ground_truth, norm_path,
+                   walk_image_files, filter_at_threshold)
+from session_manager import save_session_state, recalculate_metrics, is_running_locally
 
 
 @st.cache_resource(show_spinner=False)
@@ -17,10 +18,11 @@ def _load_backbone(model_id):
     return engine.load_backbone(model_id)
 
 
-def filter_at_threshold(all_duplicates, threshold):
-    """Hash-confirmed pairs are exact copies; the cosine slider never hides them."""
-    return [d for d in all_duplicates
-            if d.get('method') == 'dHash' or d['score'] >= threshold]
+@st.cache_data(ttl=60, show_spinner=False)
+def _dir_size_mb(path):
+    """get_dir_size walks the whole folder; without caching the sidebar
+    re-walked the dataset on every rerun (each slider drag, each click)."""
+    return get_dir_size(path)
 
 
 # ------------------------------------------------------------- demo bundle
@@ -240,21 +242,22 @@ def _render_model_selection():
                 st.info("Model changed. Run a new scan to apply it.")
 
 
-def _is_running_locally():
-    """True when the app runs on this machine (local paths make sense)."""
-    try:
-        host = st.context.headers.get("Host", "")
-        return "localhost" in host or "127.0.0.1" in host
-    except Exception:
-        return os.path.exists(config.DATASET_PATH)
-
-
 def _safe_extract_zip(zip_file, target_dir):
-    """Extract a ZIP, refusing entries that try to escape the target folder."""
+    """Extract a ZIP, refusing path traversal, excessive entry counts, and
+    uncompressed sizes big enough to fill the disk - all checked before
+    anything is written."""
     import zipfile
     root = os.path.realpath(target_dir)
     with zipfile.ZipFile(zip_file, 'r') as zf:
-        for member in zf.infolist():
+        members = zf.infolist()
+        if len(members) > config.MAX_ZIP_ENTRIES:
+            raise ValueError(f"That ZIP contains {len(members):,} entries; "
+                             f"the limit is {config.MAX_ZIP_ENTRIES:,}.")
+        total_mb = sum(m.file_size for m in members) / (1024 * 1024)
+        if total_mb > config.MAX_ZIP_UNCOMPRESSED_MB:
+            raise ValueError(f"That ZIP would extract to {total_mb:,.0f} MB; "
+                             f"the limit is {config.MAX_ZIP_UNCOMPRESSED_MB:,} MB.")
+        for member in members:
             dest = os.path.realpath(os.path.join(target_dir, member.filename))
             if not (dest == root or dest.startswith(root + os.sep)):
                 raise ValueError(f"Unsafe path inside ZIP: {member.filename}")
@@ -277,12 +280,15 @@ def _download_from_gdrive(url):
         raise ValueError("Could not read a file ID from that link. Use a share link like "
                          "https://drive.google.com/file/d/FILE_ID/view?usp=sharing")
 
-    download_dir = os.path.join(config.TEMP_DIR, "gdrive_dataset")
+    # Per-session paths: a shared fixed path let two concurrent visitors
+    # rmtree each other's dataset mid-scan.
+    uid = st.session_state.session_uid
+    download_dir = os.path.join(config.TEMP_DIR, f"gdrive_{uid}")
     if os.path.exists(download_dir):
         shutil.rmtree(download_dir)
     os.makedirs(download_dir, exist_ok=True)
 
-    zip_path = os.path.join(config.TEMP_DIR, "gdrive_download.zip")
+    zip_path = os.path.join(config.TEMP_DIR, f"gdrive_download_{uid}.zip")
     gdown.download(id=file_id, output=zip_path, quiet=False)
     if not os.path.exists(zip_path):
         raise FileNotFoundError("Download failed. Make sure the file is shared as "
@@ -295,7 +301,7 @@ def _download_from_gdrive(url):
 
 def _render_dataset_config():
     with st.expander("Dataset", expanded=True):
-        is_local = _is_running_locally()
+        is_local = is_running_locally()
         options = (["Local folder", "Upload ZIP", "Google Drive link"]
                    if is_local else ["Upload ZIP", "Google Drive link"])
         source = st.radio("Where are your images?", options,
@@ -310,7 +316,7 @@ def _render_dataset_config():
             )
             st.session_state["active_dataset_path"] = dataset_path
             if os.path.isdir(dataset_path):
-                st.success(f"Found {get_dir_size(dataset_path):.1f} MB of images")
+                st.success(f"Found {_dir_size_mb(dataset_path):.1f} MB of images")
             else:
                 st.info("Enter a valid folder path")
 
@@ -345,7 +351,7 @@ def _render_dataset_config():
                     else:
                         st.session_state["active_dataset_path"] = upload_dir
                         st.success(f"Extracted {n_images:,} images "
-                                   f"({get_dir_size(upload_dir):.1f} MB)")
+                                   f"({_dir_size_mb(upload_dir):.1f} MB)")
                 except ValueError as e:
                     st.error(str(e))
             else:
@@ -377,7 +383,7 @@ def _render_dataset_config():
                         else:
                             st.session_state["active_dataset_path"] = download_dir
                             st.success(f"Downloaded {n_images:,} images "
-                                       f"({get_dir_size(download_dir):.1f} MB)")
+                                       f"({_dir_size_mb(download_dir):.1f} MB)")
                     except Exception as e:
                         st.error(f"Download failed: {e}")
 

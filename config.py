@@ -40,6 +40,11 @@ DEMO_SAMPLES_DIR = "./demo_samples"
 # Hosted uploads: embedding runs on the server CPU, so cap batch size
 MAX_UPLOAD_IMAGES = 500
 
+# ZIP extraction limits, checked BEFORE extracting anything so a zip bomb
+# cannot fill the server disk (the image-count cap only runs afterwards)
+MAX_ZIP_ENTRIES = 10_000
+MAX_ZIP_UNCOMPRESSED_MB = 2_000
+
 # UI
 CLUSTERS_PER_PAGE = 5
 THUMBNAIL_MAX_SIZE = 384  # px, longest side

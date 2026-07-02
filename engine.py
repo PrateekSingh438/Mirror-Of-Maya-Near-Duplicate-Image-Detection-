@@ -221,7 +221,8 @@ class DuplicateDetector:
                 })
         return results
 
-    def compare_two_images(self, img1_path, img2_path):
+    def compare_two_images(self, img1_path, img2_path, threshold=None):
+        threshold = self.optimal_threshold if threshold is None else threshold
         vec1 = self._embed_path(img1_path)
         vec2 = self._embed_path(img2_path)
         if vec1 is None or vec2 is None:
@@ -241,7 +242,7 @@ class DuplicateDetector:
         return {
             "similarity": similarity,
             "hash_distance": hash_dist,
-            "match": similarity >= self.optimal_threshold,
+            "match": similarity >= threshold,
         }
 
     # ------------------------------------------------------------ calibration
@@ -260,7 +261,7 @@ class DuplicateDetector:
         group_ids = sorted(gt_groups)
         rng = random.Random(config.CALIBRATION_SEED)
         rng.shuffle(group_ids)
-        half = max(1, len(group_ids) // 2)
+        half = max(1, int(len(group_ids) * config.CALIBRATION_HOLDOUT_FRACTION))
         calib_files = {f for g in group_ids[:half] for f in gt_groups[g]}
         holdout_files = {f for g in group_ids[half:] for f in gt_groups[g]}
 

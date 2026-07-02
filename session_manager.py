@@ -5,9 +5,19 @@ import uuid
 from datetime import datetime
 
 import config
-from utils import duplicates_to_pairset, pair_metrics
+from utils import duplicates_to_pairset, pair_metrics, filter_at_threshold
 
 SESSION_FILE = os.path.join(config.TEMP_DIR, "session_state.json")
+
+
+def is_running_locally():
+    """True when the app runs on this machine (local paths and persisted
+    preferences make sense)."""
+    try:
+        host = st.context.headers.get("Host", "")
+        return "localhost" in host or "127.0.0.1" in host
+    except Exception:
+        return os.path.exists(config.DATASET_PATH)
 
 
 def initialize_session_state():
@@ -26,6 +36,8 @@ def initialize_session_state():
         'scan_stats': {},
         'selected_model': config.DEFAULT_MODEL_ID,
         'page': 0,
+        'hash_page': 0,
+        'selection_gen': 0,          # bumped to reset the manager checkboxes
         'session_uid': uuid.uuid4().hex[:12],
         'active_dataset_path': None,
         'demo_mode': False,
@@ -38,7 +50,12 @@ def initialize_session_state():
 def save_session_state():
     """Persist harmless preferences only. The deletion queue is deliberately
     NOT saved: restoring it across sessions made one click delete files that
-    were selected weeks earlier."""
+    were selected weeks earlier.
+
+    Local runs only: on a hosted deployment every visitor shares the container
+    filesystem, so persisting would leak one user's choices to the next."""
+    if not is_running_locally():
+        return
     try:
         state_data = {
             'optimal_thresh': st.session_state.optimal_thresh,
@@ -52,6 +69,8 @@ def save_session_state():
 
 
 def load_session_state():
+    if not is_running_locally():
+        return None
     try:
         if os.path.exists(SESSION_FILE):
             with open(SESSION_FILE, 'r') as f:
@@ -71,9 +90,6 @@ def recalculate_metrics(threshold):
     if not gt_pairs:
         return None
 
-    filtered = [
-        d for d in st.session_state.all_duplicates
-        if d.get('method') == 'dHash' or d['score'] >= threshold
-    ]
+    filtered = filter_at_threshold(st.session_state.all_duplicates, threshold)
     det = duplicates_to_pairset(filtered)
     return pair_metrics(det, gt_pairs)

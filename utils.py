@@ -107,18 +107,6 @@ def duplicates_to_pairset(duplicates):
     return {pair_key(d["file1"], d["file2"]) for d in duplicates}
 
 
-def clusters_to_pairset(clusters):
-    """Implied pair set of the predicted clusters (cluster-level evaluation:
-    if A-B and A-C were detected, the cluster correctly implies B-C too)."""
-    pairs = set()
-    for c in clusters:
-        members = [c["original"]] + [d["path"] for d in c["duplicates"]]
-        members = sorted(norm_path(m) for m in members)
-        for a, b in itertools.combinations(members, 2):
-            pairs.add((a, b))
-    return pairs
-
-
 def per_attack_recall(clusters, gt_groups, dataset_path):
     """For each attack folder (e.g. jpeg/10, crops/crop_50_percent): what
     fraction of its files ended up in the same predicted cluster as their
@@ -244,18 +232,28 @@ def get_dir_size(path):
     return total / (1024 * 1024)
 
 
-def calculate_wasted_space(duplicates):
+def calculate_wasted_space(clusters):
+    """MB used by deletable copies: every cluster member except the kept
+    original. Pair lists can't be used here - a pair's file1/file2 order is
+    arbitrary, so summing one side may count the original as waste."""
     seen = set()
     total = 0
-    for d in duplicates:
-        key = norm_path(d['file2'])
-        if key not in seen:
-            try:
-                total += os.path.getsize(d['file2'])
+    for c in clusters:
+        for d in c['duplicates']:
+            key = norm_path(d['path'])
+            if key not in seen:
                 seen.add(key)
-            except OSError:
-                pass
+                try:
+                    total += os.path.getsize(d['path'])
+                except OSError:
+                    pass
     return total / (1024 * 1024)
+
+
+def filter_at_threshold(all_duplicates, threshold):
+    """Hash-confirmed pairs are exact copies; the cosine slider never hides them."""
+    return [d for d in all_duplicates
+            if d.get('method') == 'dHash' or d['score'] >= threshold]
 
 
 def format_file_size(bytes_size):
