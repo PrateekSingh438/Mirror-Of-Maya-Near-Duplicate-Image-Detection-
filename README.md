@@ -1,5 +1,7 @@
 # Mirror of Maya
 
+[![Tests](https://github.com/PrateekSingh438/Mirror-Of-Maya-Near-Duplicate-Image-Detection-/actions/workflows/tests.yml/badge.svg)](https://github.com/PrateekSingh438/Mirror-Of-Maya-Near-Duplicate-Image-Detection-/actions/workflows/tests.yml)
+
 **Near-duplicate image detection with self-measured accuracy.**
 
 Mirror of Maya finds copies of the same image inside a photo collection, even when the copies have been compressed, cropped, rotated, resized, or recolored. It combines perceptual hashing for exact copies with DINOv2 vision-transformer embeddings for visually modified copies, and — whenever the dataset supplies ground truth — it reports precision, recall, and F1 on a held-out split it has never seen.
@@ -17,6 +19,7 @@ Mirror of Maya finds copies of the same image inside a photo collection, even wh
 - [Processing pipeline](#processing-pipeline)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Testing](#testing)
 - [Configuration](#configuration)
 - [Dataset conventions for evaluation](#dataset-conventions-for-evaluation)
 - [Project structure](#project-structure)
@@ -161,6 +164,22 @@ On launch the app preloads the demo corpus if `demo_bundle/` exists. To scan you
 
 Deleted files go to a `.maya_trash` folder inside the dataset, never to permanent deletion, and the most recent deletion can be undone from the Manager tab.
 
+## Testing
+
+```bash
+pip install pytest
+pytest
+```
+
+The suite runs in seconds with no model download and no network access:
+
+- **Metrics and ground truth** (`test_utils.py`) — pairwise precision/recall/F1, the calibration/holdout restriction, ground-truth pair closure for both dataset conventions, and connected-component clustering with keeper selection.
+- **Detection engine** (`test_engine.py`) — the hashing stage, FAISS range search, hash/semantic pair merging, delete/undo round trips, and the threshold calibration sweep, all against a fake backbone with hand-crafted embeddings.
+- **UI regressions** (`test_manager_selection.py`) — drives the actual Manager tab headlessly via Streamlit's `AppTest` to guard the select-all / clear-selection flow.
+- **Upload safety** (`test_zip_guard.py`) — path traversal and zip-bomb limits rejected before anything is written to disk.
+
+The same suite runs in CI on every push (see the badge above).
+
 ## Configuration
 
 Key values in `config.py`:
@@ -214,6 +233,8 @@ tabs.py                 The seven UI tabs
 build_demo_bundle.py    Builds demo_bundle/ and demo_samples/ from the dataset
 demo_bundle/            Prebuilt demo index (embeddings, thumbnails, calibration)
 demo_samples/           One-click query images for the Search tab
+tests/                  Pytest suite (metrics, engine, UI regressions, upload safety)
+.github/workflows/      CI: the test suite runs on every push
 requirements.txt        Dependencies
 ```
 
@@ -275,7 +296,6 @@ A CUDA GPU is used automatically when available and speeds up indexing significa
 
 ## Future improvements
 
-- Automated tests (pytest) for the pure-Python metric and clustering code, plus CI
 - CLIP-based text-to-image search as an optional third stage
 - Patch-level similarity heatmaps to show *where* two images match
 - An attack-robustness playground for trying custom transforms against the live index
