@@ -23,7 +23,9 @@ generate_crop.py
 
 # Personal files (not part of the project)
 main.tex
+resume.tex
 Resume*.pdf
+resume*.pdf
 mirror-of-maya-rebuild-spec.md
 
 # Editors / tooling
